@@ -1,0 +1,70 @@
+# Een geteste versie vrijgeven voor live, met één knop: Actions › Versie vrijgeven › Run workflow.
+# Er wordt niets opnieuw gebouwd: exact dezelfde Docker-image krijgt het label :live, en het Windows-
+# installatieprogramma van die versie wordt een vaste download bij Releases.
+name: Versie vrijgeven
+
+on:
+  workflow_dispatch:
+    inputs:
+      bron:
+        description: "Welke versie? Leeg = wat nu op test staat. Of bijv. build-42 om terug te gaan (dan zonder nieuw installatieprogramma)."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: vrijgeven
+  cancel-in-progress: false
+
+jobs:
+  vrijgeven:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bron bepalen
+        run: |
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/plakzicht-mail" >> "$GITHUB_ENV"
+          SRC="${{ inputs.bron }}"
+          [ -z "$SRC" ] && SRC=test
+          case "$SRC" in
+            test|build-*|sha-*) ;;
+            *) echo "Onbekende bron '$SRC'. Gebruik test, build-<nummer> of sha-<code>."; exit 1 ;;
+          esac
+          echo "SRC=$SRC" >> "$GITHUB_ENV"
+          echo "STAMP=$(date +%Y%m%d-%H%M)" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Label :live zetten
+        run: |
+          VERSION=$(docker buildx imagetools inspect "$IMAGE:$SRC" --format '{{ index .Image.Config.Labels "org.opencontainers.image.version" }}' || true)
+          echo "VERSION=${VERSION:-onbekend}" >> "$GITHUB_ENV"
+          docker buildx imagetools create -t "$IMAGE:live" -t "$IMAGE:live-$STAMP" "$IMAGE:$SRC"
+
+      - name: Windows-installatie als vaste download
+        if: env.SRC == 'test'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download nieuwste-test -p PlakzichtMail-setup.exe -D dl
+          gh release create "versie-${VERSION}" dl/PlakzichtMail-setup.exe --latest \
+            --title "Plakzicht Mail ${VERSION}" \
+            --notes "Vrijgegeven versie. Server op Unraid: Compose Manager Plus › Update stack. Werkplekken: PlakzichtMail-setup.exe (kies 'Werkplek')."
+
+      - name: Samenvatting
+        run: |
+          {
+            echo "### Versie \`${VERSION}\` staat klaar voor **live**"
+            echo ""
+            echo "- Bron: \`${IMAGE}:${SRC}\` · vast label om later terug te zetten: \`live-${STAMP}\`"
+            echo "- Op Unraid: Docker › Compose › *plakzicht-mail* › **Update stack**."
+            echo "- Windows-installatie: Releases › *Plakzicht Mail ${VERSION}*."
+          } >> "$GITHUB_STEP_SUMMARY"

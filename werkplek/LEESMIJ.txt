@@ -1,0 +1,15 @@
+PLAKZICHT MAIL OP EEN WERKPLEK
+==============================
+Makkelijkst: installeer PlakzichtMail-setup.exe (GitHub > Releases) en kies
+"Werkplek". Python is dan niet nodig. Zie docs/WINDOWS.md.
+
+Zonder installatie, vanuit deze map (Python nodig, "Add python.exe to PATH"):
+start "Start Plakzicht Mail.bat". De eerste keer vraagt de app om twee adressen:
+  - adres in het bedrijfsnetwerk, bijvoorbeeld http://192.168.1.20:8765
+  - internetadres, bijvoorbeeld https://mail.plakzicht.nl
+De app probeert eerst het netwerkadres en anders het internetadres. Wijzigen:
+in de app Mijn instellingen > Apparaten > "Serveradressen van deze app
+wijzigen", of pas werkplek.json aan.
+
+Geen app? Open het internetadres gewoon in de browser en installeer het als
+app (Chrome/Edge: knop "Installeren" in de adresbalk).

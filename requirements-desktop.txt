@@ -1,0 +1,3 @@
+# Eigen venster op Windows/Mac (werkplek-app en 'Start Plakzicht Mail.bat')
+-r requirements.txt
+pywebview>=5

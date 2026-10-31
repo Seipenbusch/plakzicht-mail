@@ -1,0 +1,30 @@
+# Plakzicht Mail op Unraid (Compose Manager Plus). Instellingen staan in .env (zie .env.voorbeeld).
+services:
+  mail:
+    image: ghcr.io/seipenbusch/plakzicht-mail:${KANAAL:-live}
+    container_name: plakzicht-mail
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Amsterdam
+      # Achter Cloudflare: echte adressen van de pc's gebruiken (blokkeren na foute wachtwoorden, apparatenlijst)
+      PLAKZICHT_TRUST_PROXY: "1"
+    ports:
+      - "${POORT:-8765}:8765"          # lokaal: http://<ip-van-unraid>:8765
+    volumes:
+      - ${DATA_MAP:-/mnt/user/appdata/plakzicht-mail}:/data
+    labels:
+      net.unraid.docker.webui: "http://[IP]:[PORT:8765]/"
+      net.unraid.docker.icon: "${ICON_URL:-}"
+
+  # Online via mail.plakzicht.nl (Cloudflare Tunnel). Aan met COMPOSE_PROFILES=tunnel + TUNNEL_TOKEN in .env.
+  # In Cloudflare wijst de hostname mail.plakzicht.nl naar service http://plakzicht-mail:8765.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: plakzicht-mail-tunnel
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      - mail

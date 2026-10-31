@@ -1,0 +1,43 @@
+# Bij elke pull request: alle tests draaien en de Docker-image proef-bouwen, zodat je vóór het samenvoegen ziet
+# of alles nog werkt. (Publiceren gebeurt pas na het samenvoegen op 'main', in bouwen.yml.)
+name: Tests
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Onderdelen installeren
+        run: |
+          pip install -r requirements.txt playwright
+          python -m playwright install --with-deps chromium
+      - name: Tests
+        env:
+          TZ: Europe/Amsterdam
+        run: python tests/run_all.py
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image proef-bouwen en starten
+        run: |
+          docker build --build-arg VERSION=pr-check -t plakzicht-mail:check .
+          docker run -d --name check plakzicht-mail:check
+          for i in $(seq 1 30); do
+            if [ "$(docker inspect -f '{{.State.Health.Status}}' check)" = "healthy" ]; then
+              echo "Container gezond"; docker logs check; exit 0
+            fi
+            sleep 2
+          done
+          echo "Container start niet goed:"; docker logs check; exit 1
