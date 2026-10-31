@@ -1,0 +1,18 @@
+# gegevens en geheimen: nooit in git
+*.db
+*.db-wal
+*.db-shm
+config.json
+config.json.tmp
+secrets.key
+werkplek.json
+werkplek/werkplek.json
+backups/
+server.log
+# bouwen
+__pycache__/
+build/
+dist/
+*.spec
+versie_build.py
+.venv/
