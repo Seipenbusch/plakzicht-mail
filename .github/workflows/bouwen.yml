@@ -1,0 +1,147 @@
+# Bij elke wijziging op 'main': tests, Docker-image bouwen en controleren dat hij opstart,
+# publiceren als :test (+ vaste tags build-<nummer> en sha-<code> om later naar terug te kunnen),
+# en het Windows-installatieprogramma bouwen.
+name: Bouwen (test)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: bouwen
+  cancel-in-progress: false
+
+jobs:
+  versie:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      winversion: ${{ steps.v.outputs.winversion }}
+    steps:
+      - id: v
+        run: |
+          echo "version=$(date +%Y.%m.%d)-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "winversion=$(date +%Y.%-m.%-d).${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+  docker:
+    needs: versie
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.versie.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tests
+        env:
+          TZ: Europe/Amsterdam
+        run: |
+          pip install -r requirements.txt playwright
+          python -m playwright install --with-deps chromium
+          python tests/run_all.py
+      - name: Namen bepalen
+        run: |
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/plakzicht-mail" >> "$GITHUB_ENV"
+          echo "SHORT=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image bouwen (lokaal, om te testen)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: plakzicht-mail:check
+          build-args: VERSION=${{ env.VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Container starten en /health controleren
+        run: |
+          docker run -d --name check plakzicht-mail:check
+          for i in $(seq 1 30); do
+            if [ "$(docker inspect -f '{{.State.Health.Status}}' check)" = "healthy" ]; then
+              echo "Container gezond"; docker logs check; exit 0
+            fi
+            sleep 2
+          done
+          echo "Container start niet goed:"; docker logs check; exit 1
+      - name: Publiceren als :test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          provenance: false
+          platforms: linux/amd64
+          build-args: VERSION=${{ env.VERSION }}
+          cache-from: type=gha
+          labels: |
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          tags: |
+            ${{ env.IMAGE }}:test
+            ${{ env.IMAGE }}:build-${{ github.run_number }}
+            ${{ env.IMAGE }}:sha-${{ env.SHORT }}
+
+  windows:
+    needs: versie
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.versie.outputs.version }}
+      WINVERSION: ${{ needs.versie.outputs.winversion }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Onderdelen installeren
+        run: |
+          pip install -r requirements-desktop.txt pyinstaller
+          if ($LASTEXITCODE) { exit 1 }
+          choco install innosetup -y --no-progress
+          if ($LASTEXITCODE) { exit 1 }
+      - name: Programma's bouwen (PyInstaller)
+        run: |
+          "PLAKZICHT_VERSION = '$env:VERSION'" | Out-File -Encoding utf8 versie_build.py
+          pyinstaller --noconfirm --clean --windowed --name "Plakzicht Mail" --icon installer/icoon.ico werkplek/werkplek.py
+          if ($LASTEXITCODE) { exit 1 }
+          pyinstaller --noconfirm --clean --windowed --name "Plakzicht Mail server" --icon installer/icoon.ico `
+            --add-data "ui;ui" --hidden-import versie_build app.py
+          if ($LASTEXITCODE) { exit 1 }
+          Copy-Item installer/dienst.ps1 "dist/Plakzicht Mail server/"
+      - name: Snelle controle van de server-exe
+        run: |
+          $env:PLAKZICHT_DATA = "$env:RUNNER_TEMP\pmdata"
+          $p = Start-Process -FilePath "dist/Plakzicht Mail server/Plakzicht Mail server.exe" -ArgumentList "--server","--port","8799" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            try { $r = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8799/health -TimeoutSec 2; if ($r.StatusCode -eq 200) { $ok = $true; break } } catch {}
+            Start-Sleep -Seconds 1
+          }
+          Stop-Process -Id $p.Id -Force
+          if (-not $ok) { Get-Content "$env:PLAKZICHT_DATA\server.log" -ErrorAction SilentlyContinue; throw "Server-exe start niet" }
+          Write-Host "Server-exe werkt: $($r.Content)"
+      - name: Installatieprogramma maken (Inno Setup)
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$env:WINVERSION" "/DMyAppLabel=$env:VERSION" installer/plakzicht-mail.iss
+          if ($LASTEXITCODE) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PlakzichtMail-setup-${{ env.VERSION }}
+          path: dist/PlakzichtMail-setup.exe
+      - name: Klaarzetten als download 'Nieuwste testversie'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete nieuwste-test --yes --cleanup-tag 2>$null
+          gh release create nieuwste-test dist/PlakzichtMail-setup.exe --prerelease --target $env:GITHUB_SHA `
+            --title "Nieuwste testversie ($env:VERSION)" `
+            --notes "Windows-installatie van de laatste versie op main. Voor werkplekken: kies 'Werkplek'. Vaste versies staan bij de releases zonder 'test'."

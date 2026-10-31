@@ -1,0 +1,274 @@
+PLAKZICHT MAIL
+==============
+
+Installeren
+-----------
+De server draait op een plek die altijd aan staat; medewerkers gebruiken de
+app of de browser. Uitgebreid: docs/UNRAID.md, docs/WINDOWS.md, docs/MAC.md.
+
+1. Server op Unraid (Docker, aanbevolen)
+   Stack "plakzicht-mail" in Compose Manager Plus met deploy/unraid/
+   docker-compose.yml. Lokaal: http://<ip-van-unraid>:8765. Via internet:
+   https://mail.plakzicht.nl (Cloudflare Tunnel + Access). Gegevens in
+   /mnt/user/appdata/plakzicht-mail.
+
+2. Windows: PlakzichtMail-setup.exe (bij Releases op GitHub)
+   Python en alle onderdelen zitten erin. Kies bij het installeren:
+   - Werkplek        alleen de app; vul het adres in het netwerk en het
+                     internetadres in. De app kiest zelf: op kantoor het
+                     netwerk, anders via internet.
+   - Server en app   de server draait als dienst op deze pc (start met de pc),
+                     gegevens in C:\ProgramData\Plakzicht Mail.
+   Windows kan waarschuwen voor een "onbekende uitgever": Meer info >
+   Toch uitvoeren.
+
+3. Mac en overige: open https://mail.plakzicht.nl in Chrome, Edge of Safari
+   en installeer het als app (Chrome/Edge: knop Installeren in de adresbalk;
+   Safari: Archief > Zet in Dock).
+
+Vanuit de broncode (ontwikkelen): "Start server.bat", of python app.py --server.
+"Start Plakzicht Mail.bat" opent alles op deze pc in een eigen venster.
+
+Ingelogd blijven
+----------------
+- Vink bij het inloggen "Ingelogd blijven op deze computer" aan; na een
+  herstart van de pc of de server ben je dan nog ingelogd.
+- Mijn instellingen > Apparaten: waar je ingelogd blijft; per apparaat
+  afmelden, of alle andere apparaten tegelijk.
+- Wachtwoord wijzigen meldt alle andere apparaten af.
+- Beheer > Server: hoeveel dagen zonder gebruik (standaard 30; 0 = uit).
+  Beheer > Gebruikers > "Overal afmelden" bij een verloren laptop.
+- In de Windows-app: Mijn instellingen > Apparaten > "Serveradressen van
+  deze app wijzigen".
+
+Inloggen (demo-stand; wachtwoord voor alle drie: demo)
+-------------------------------------------------------
+  beheerder      alle mailboxen + Beheer
+  medewerker-a   info@ en verkoop@
+  medewerker-b   alleen info@
+Wijzig of verwijder deze accounts voordat je echte mailboxen koppelt.
+
+Microsoft 365 koppelen (meerdere accounts)
+------------------------------------------
+Beheer > Microsoft-koppeling. Het stappenplan staat in het scherm.
+  1. App-registratie in Entra ID: platform "Mobiele en desktoptoepassingen"
+     met omleidings-URI http://localhost, "Openbare clientstromen toestaan"
+     = Ja, gedelegeerde machtigingen Mail.ReadWrite, Mail.ReadWrite.Shared,
+     Mail.Send, Mail.Send.Shared + beheerderstoestemming.
+  2. Tenant-ID en client-ID invullen, Opslaan.
+  3. "Aanmelden met Microsoft": je krijgt een code. Ga (op welke pc of
+     telefoon dan ook) naar microsoft.com/devicelogin, vul de code in en
+     meld je aan. Herhaal dit voor elk account dat je wilt toevoegen.
+     Op de server zelf kan ook "Aanmelden via deze browser".
+  4. "Overschakelen naar Microsoft 365" en opnieuw inloggen.
+  5. Beheer > Microsoft-mailboxen: mailboxen koppelen. Het programma zoekt
+     zelf via welk account een mailbox bereikbaar is; per mailbox kun je
+     het account wijzigen.
+  6. Beheer > Gebruikers: lokale gebruikers aanmaken en per gebruiker
+     aanvinken welke mailboxen hij ziet.
+Elk account kan alleen bij mailboxen waar dat account in Exchange rechten
+op heeft (eigen mailbox, of Volledige toegang op een gedeelde mailbox).
+
+Lokale kopie (zoals het .ost-bestand van Outlook)
+--------------------------------------------------
+De server bewaart van elke gekoppelde mailbox de mappen en mails in
+mail_microsoft.db en werkt die elke minuut bij (alleen wat veranderd is).
+Daardoor laden lijsten en zoeken direct.
+- Per mailbox stel je in hoe ver terug (Beheer > Microsoft-mailboxen,
+  kolom "Offline bewaren"): 1 week, 2 weken, 1 maand, 3 maanden (standaard),
+  6 maanden, 1 jaar, 2 jaar, 5 jaar of alles. Mails binnen die periode staan
+  met inhoud op de server; oudere worden uit de kopie gehaald (bij Microsoft
+  blijven ze gewoon staan).
+- Oudere mails: knop "Oudere mails ophalen bij Microsoft" onder de maillijst.
+  Bij zoeken: "Ook in oudere mails zoeken bij Microsoft".
+- De eerste keer koppelen van een grote mailbox kan even duren; mappen die
+  nog niet klaar zijn, worden rechtstreeks bij Microsoft opgehaald.
+- Beheer > Microsoft-mailboxen toont per mailbox de stand van de kopie,
+  met "Bijwerken" en "Opnieuw" (kopie wissen en opnieuw ophalen).
+- Vernieuw-knop boven de maillijst: nu bijwerken.
+Losse mail bewaren: lint Plakzicht > "Opslaan als .eml" of rechtermuisknop >
+"Opslaan als .eml". Dat bestand opent in Outlook en andere mailprogramma's.
+
+Maillijst: kolommen, sorteren en scheidingsbalken
+-------------------------------------------------
+- Kolommen zoals in Outlook: !, herinnering, pictogram, bijlage, Van,
+  Onderwerp, Ontvangen, Grootte, Categorieen, Vermelding (@) en vlag. Extra:
+  Order/offerte, Opgepakt door en Mailbox. Kies ze met het trechter-icoon
+  rechts in de kolomkoppen; breedte aanpassen door de rand te slepen.
+- Klik op een kolomkop om te sorteren; nog eens klikken draait de volgorde om.
+- Scheidingsbalken: op datum Vandaag, Gisteren, de dagen van de afgelopen
+  week en daarna Ouder. Gesorteerd op een andere kolom: een balk per waarde.
+  Klik op een balk om hem in te klappen. Aan/uit onder Beeld of Mijn
+  instellingen. Alles wordt per gebruiker bewaard.
+- Is de lijst te smal voor de kolommen, dan toont hij de compacte weergave
+  (met een knop om de lijst breder te maken).
+
+Lint
+----
+Tabbladen Start, Beeld, Plakzicht en Claude. Op Start: Nieuwe e-mail,
+Verwijderen (ook map leegmaken), Archiveren, Verplaatsen (recente mappen
+bovenaan), Melden (ongewenst/phishing), Beantwoorden, Allen beantwoorden,
+Doorsturen, Toewijzen aan een collega (die krijgt een melding), Snelle
+stappen, Ongelezen/gelezen, Categoriseren, Opvolgen (vandaag, morgen, deze
+week, volgende week, datum, voltooid), Personen zoeken, Adresboek, E-mail
+filteren, Voorlezen, Vertalen en Claude. Past het lint niet, dan gaan de
+minst gebruikte knoppen naar het menu met de drie puntjes.
+Snelle stappen: meerdere acties met een klik (bijv. Behandeld = gelezen,
+vlag voltooid, vrijgeven, naar Archief). Zelf maken onder Mijn instellingen >
+Snelle stappen; de beheerder kan ze voor iedereen maken.
+
+Antwoorden in het leesvenster
+-----------------------------
+Beantwoorden, Allen beantwoorden en Doorsturen openen rechts in het
+leesvenster; de lijst en Plakzicht blijven zichtbaar. Ga je naar een andere
+mail, dan blijft je antwoord als concept bewaard (in de lijst staat
+[Concept]) en komt het terug als je de mail weer opent. "Uitklappen" maakt
+het volledig scherm. Wil je altijd volledig scherm: Beeld of Mijn instellingen.
+Concepten worden in de browser van die pc bewaard.
+
+Claude
+------
+Beheer > Claude: API-sleutel van Anthropic invullen (console.anthropic.com >
+API keys), model kiezen, testen, en per gebruiker aanzetten met een
+maandlimiet. Zonder sleutel staan de Claude-knoppen grijs.
+Functies: samenvatten, antwoord voorstellen (met de gegevens van de
+gekoppelde order of offerte), vertalen, label en map voorstellen, gegevens
+uit een aanvraag halen, en bij het schrijven: tekst verbeteren, korter,
+formeler, vriendelijker of vertalen. Alleen de mail waarop je klikt gaat naar
+Claude; er wordt nooit automatisch iets verstuurd. Eigen toon en aanspreekvorm:
+Mijn instellingen > Claude.
+
+Meerdere mails tegelijk
+-----------------------
+Ctrl+klik voegt een mail toe aan de selectie, Shift+klik selecteert een reeks,
+Ctrl+A alles, Esc heft op. Of gebruik het vinkje voor elke regel. Met een
+selectie kun je labelen, toewijzen aan een collega, oppakken, verplaatsen,
+archiveren, verwijderen, (on)gelezen maken, een vlag of opvolgdatum zetten en
+een snelle stap uitvoeren: via het lint, de rechtermuisknop of het paneel
+rechts. Slepen van een selectie naar een map, mailbox of label kan ook.
+
+Meldingen bij nieuwe mail
+-------------------------
+Nieuwe, ongelezen mail in Postvak IN geeft rechtsonder een pop-up met geluid;
+klik erop om de mail te openen. Staat het venster op de achtergrond, dan komt
+er ook een Windows-melding. Aan/uit met het belletje rechtsboven; per mailbox
+en met of zonder geluid onder Mijn instellingen > Meldingen. Bij Microsoft 365
+kan de melding tot ongeveer 15 seconden na binnenkomst verschijnen.
+
+Agenda
+------
+Knop "Agenda" bovenaan: dag, werkweek, week en maand. Afspraken maken (klik
+in de agenda of "Nieuwe afspraak"), bekijken, wijzigen en verwijderen; met
+genodigden wordt een uitnodiging verstuurd. Laag "Verzenddatums van orders"
+toont wanneer orders uit Plakzicht uiterlijk verzonden moeten worden.
+Vanuit een mail: lint Plakzicht > "Afspraak maken" (of rechtermuisknop), met
+de order uit de mail erin en de afzender als genodigde met een klik.
+Het Plakzicht-paneel toont "Vandaag" als er geen mail open is.
+Instellen (Microsoft 365): in de app-registratie de gedelegeerde machtiging
+Calendars.ReadWrite toevoegen met beheerderstoestemming, dan in Beheer >
+Microsoft-koppeling "Agenda gebruiken" aanzetten en elk account opnieuw
+aanmelden. Je ziet de agenda's van de aangemelde accounts; een collega ziet
+de agenda van een account als hij bij de eigen mailbox van dat account kan.
+
+Koppeling met Plakzicht
+-----------------------
+Plakzicht Mail leest orders en offertes uit Plakzicht (alleen lezen):
+1. Plakzicht > Instellingen > Plakzicht Mail: koppeling aanzetten en de
+   API-sleutel kopieren (wordt maar een keer getoond).
+2. Plakzicht Mail > Beheer > Herkenning en Plakzicht: het adres van
+   Plakzicht in het netwerk (bijv. http://192.168.1.10:5000, niet
+   app.plakzicht.nl) en de sleutel invullen, opslaan, Verbinding testen.
+   Optioneel het adres om pagina's in de browser te openen
+   (https://app.plakzicht.nl).
+De echte Plakzicht wordt gebruikt in de Microsoft 365-stand; de demo houdt
+de nagebootste. Herkenning: ordernummers van 9 cijfers (000000412) en
+"Offertenummer 338". Of een nummer bestaat, wordt bij het openen van de mail
+nagekeken. Het paneel toont klant, status, drukproef, productie, on hold,
+verzending met track & trace en openstaand bedrag; de agenda-laag toont de
+uiterste verzenddatums uit Plakzicht.
+
+Samenwerken in dezelfde inbox
+-----------------------------
+- Live bijwerken: wat een collega doet (verplaatsen, lezen, label, vlag,
+  verwijderen) zie je binnen een seconde, zonder te verversen. Nieuwe mail
+  in Postvak IN en in mappen die iemand bekijkt komt elke 15 seconden binnen,
+  de overige mappen elke minuut.
+- Wie is ermee bezig: in de lijst en boven de mail zie je wie een mail open
+  heeft (oog) of aan het beantwoorden is (pen). Begin je zelf te antwoorden
+  terwijl een ander dat ook doet, dan krijg je een waarschuwing.
+- Oppakken: knop met het handje (of rechtermuisknop). Iedereen ziet dan
+  "opgepakt door ...". Vrijgeven met dezelfde knop.
+- Beantwoord door: na versturen staat bij de mail wie hem beantwoord of
+  doorgestuurd heeft en wanneer.
+- Geschiedenis: onder het onderwerp, wie wat met de mail deed (verplaatst,
+  verwijderd, label, opgepakt, beantwoord). Microsoft zelf ziet alleen het
+  gekoppelde account, dit logboek laat de echte collega zien.
+- Was een collega je voor (mail al verplaatst of verwijderd), dan krijg je
+  een melding met wie het deed en ververst de lijst vanzelf.
+- Verplaatsen naar een andere mailbox gaat op de achtergrond: de mail
+  verdwijnt direct uit je lijst en je kunt verder werken. Lukt het niet,
+  dan probeert de server het opnieuw en krijg je zo nodig een melding.
+
+Back-up
+-------
+Elke nacht om 02:30 maakt de server een back-up in de map "backups" in de
+gegevensmap (laatste 14 bewaard). Handmatig: Beheer > Server en back-up >
+"Nu back-up maken". Terugzetten: server stoppen en de bestanden uit een
+back-upmap terugzetten. Zet de back-ups ook op een andere schijf of NAS.
+Geheimen (aanmeldingen bij Microsoft, API-sleutels) zijn versleuteld met
+secrets.key in de gegevensmap. Die staat bewust NIET in de back-up: bewaar
+hem apart (wachtwoordkluis). Zonder dat bestand vul je ze opnieuw in.
+
+Handtekeningen per gebruiker
+----------------------------
+- Iedere gebruiker klikt rechtsboven op zijn naam (Mijn instellingen) en
+  maakt daar eigen handtekeningen, met afbeelding/logo, voor alle mailboxen
+  of voor een bepaalde mailbox. Daar kan hij ook zijn wachtwoord wijzigen.
+- De beheerder kan onder Beheer > Handtekeningen algemene handtekeningen
+  maken en handtekeningen voor een bepaalde gebruiker.
+- Welke handtekening automatisch komt: eerst de eigen handtekening voor die
+  mailbox, dan de eigen standaard, dan de algemene van de mailbox.
+- {naam} in een handtekening wordt de naam van wie verstuurt, {mailbox}
+  het adres van de mailbox. Zo kan een algemene handtekening toch persoonlijk.
+
+Wat je verder kunt
+------------------
+- Mappenboom per mailbox; mappen maken, hernoemen, verplaatsen, verwijderen
+  (rechtermuisknop). Mails slepen naar elke map, ook in een andere mailbox.
+- Rechtermuisknop op een mail: beantwoorden, doorsturen, gelezen, vlag,
+  label, verplaatsen, archiveren, order koppelen, regel maken, .eml, verwijderen.
+- Sneltoetsen zoals in Outlook: Ctrl+R, Ctrl+Shift+R, Ctrl+F, Ctrl+N,
+  Ctrl+Q, Ctrl+U, Delete, Backspace (archiveren), Insert (vlag), pijltjes.
+- Panelen verslepen, linkerkolom inklappen, regelhoogte; per gebruiker bewaard.
+- Labels worden in Microsoft 365 Outlook-categorieen.
+- Tussen twee mailboxen verplaatsen: Microsoft kan dat niet rechtstreeks;
+  het programma maakt een kopie (met bijlagen) in de andere mailbox en zet
+  het origineel in Verwijderde items.
+
+Nog niet in deze versie
+-----------------------
+- Regels werken alleen in de demo-stand.
+- Zonder koppeling (en in de demo) komen orders en offertes uit een nagebootste Plakzicht.
+
+Bestanden
+---------
+  app.py              server, gebruikers, rechten, herkenning
+  graph.py            koppeling met Microsoft 365 (Microsoft Graph)
+  mscache.py          lokale kopie van de mailboxen en synchronisatie
+  plakzicht.py        koppeling met Plakzicht (alleen lezen)
+  ui\                 scherm (HTML, CSS, JavaScript, app-profiel en iconen)
+  werkplek\           de app voor werkplekken (werkplek.py)
+  installer\          Windows-installatie (Inno Setup) en dienst
+  deploy\unraid\      docker-compose.yml en .env-voorbeeld voor Unraid
+  docs\               handleidingen (Unraid, Windows, Mac)
+  tests\              tests (python tests/run_all.py)
+
+In de gegevensmap (Docker: /data, Windows-installatie: C:\ProgramData\
+Plakzicht Mail, vanuit de broncode: de programmamap):
+  config.json         stand, koppelgegevens, aangemelde accounts (versleuteld)
+  secrets.key         sleutel voor de versleutelde gegevens (apart bewaren!)
+  mail_demo.db        demogegevens
+  mail_microsoft.db   gegevens en lokale kopie in de Microsoft-stand
+  backups\            automatische back-ups
+  server.log          meldingen (Windows-dienst)
+Wie bij de gegevensmap kan, kan bij de mail: alleen beheerders.

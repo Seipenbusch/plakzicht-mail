@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plakzicht Mail</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#1f2a26">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Plakzicht Mail">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-density="middel">
+
+<div id="login" class="login" hidden>
+  <form id="loginform" class="loginbox" autocomplete="off">
+    <div class="brand">Plakzicht <span>Mail</span></div>
+    <p class="muted" id="loginmode"></p>
+    <label>Gebruikersnaam<input name="username" required autofocus></label>
+    <label>Wachtwoord<input name="password" type="password" required></label>
+    <label class="keep" id="keepbox" hidden><input type="checkbox" name="remember" checked> <span>Ingelogd blijven op deze computer <small class="muted" id="keepdays"></small></span></label>
+    <button class="btn primary big" type="submit">Inloggen</button>
+    <p class="err" id="loginerr" hidden></p>
+    <div class="demo-accounts">
+      <div><b>beheerder</b> · alle mailboxen, beheer</div>
+      <div><b>medewerker-a</b> · info@ en verkoop@</div>
+      <div><b>medewerker-b</b> · alleen info@</div>
+      <div class="muted">Wachtwoord voor alle drie: <b>demo</b></div>
+    </div>
+  </form>
+</div>
+
+<div id="app" hidden>
+  <header class="topbar">
+    <strong class="logo">Plakzicht</strong><span id="modebadge" class="modebadge"></span>
+    <nav class="topnav" aria-label="Hoofdmenu">
+      <button class="navbtn" id="nav-orders" title="Zoek een order of offerte">Orders</button>
+      <button class="navbtn on" id="nav-mail">Mail</button>
+      <button class="navbtn" id="nav-cal">Agenda</button>
+    </nav>
+    <label class="topsearch"><span class="sr">Zoeken</span>
+      <input id="search" type="search" placeholder="Zoek in deze map: mail, ordernummer of klant…">
+    </label>
+    <div class="topright">
+      <button class="navbtn bell" id="btn-notify" aria-label="Meldingen bij nieuwe mail"></button>
+      <button class="navbtn" id="nav-rules">Regels</button>
+      <button class="navbtn" id="btn-admin" hidden>Beheer</button>
+      <button id="whoami" class="navbtn who" title="Mijn instellingen: handtekening en wachtwoord"></button>
+      <button class="navbtn" id="btn-logout">Uitloggen</button>
+    </div>
+  </header>
+  <div id="ribbon" class="rbn" aria-label="Lint"></div>
+
+  <div class="main" id="main">
+    <nav id="side" class="side" aria-label="Mailboxen en labels"></nav>
+    <div class="gutter g-side" data-g="side" role="separator" aria-orientation="vertical" aria-label="Breedte zijbalk" tabindex="0" title="Sleep om de breedte aan te passen (dubbelklik = standaard)"></div>
+    <section id="list" class="list" aria-label="Berichten"></section>
+    <div class="gutter g-list" data-g="list" role="separator" aria-orientation="vertical" aria-label="Breedte maillijst" tabindex="0" title="Sleep om de breedte aan te passen (dubbelklik = standaard)"></div>
+    <article id="reader" class="reader" aria-label="Geopende mail"></article>
+    <div class="gutter g-pz" data-g="pz" role="separator" aria-orientation="vertical" aria-label="Breedte Plakzicht-paneel" tabindex="0" title="Sleep om de breedte aan te passen (dubbelklik = standaard)"></div>
+    <aside id="pz" class="pz" aria-label="Plakzicht bij deze mail"></aside>
+  </div>
+
+  <div id="overlay" class="overlay" hidden></div>
+</div>
+
+<dialog id="dlg"></dialog>
+<div id="toast" class="toast" hidden></div>
+<input type="file" id="filepick" accept="image/*" hidden>
+
+<script src="app.js"></script>
+</body>
+</html>

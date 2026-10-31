@@ -1,0 +1,8 @@
+*
+!app.py
+!graph.py
+!mscache.py
+!plakzicht.py
+!requirements.txt
+!ui
+ui/**/*.bak

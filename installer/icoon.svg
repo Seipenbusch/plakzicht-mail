@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Plakzicht Mail: envelop als sticker met een omgekrulde hoek -->
+  <rect width="512" height="512" rx="112" fill="#1f6f54"/>
+  <path d="M112 156h288a24 24 0 0 1 24 24v104l-112 112H112a24 24 0 0 1-24-24V180a24 24 0 0 1 24-24z" fill="#ffffff"/>
+  <path d="M96 184l160 112 160-112" fill="none" stroke="#1f6f54" stroke-width="26" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M424 284 312 396v-80a32 32 0 0 1 32-32z" fill="#8fd3b6"/>
+</svg>
