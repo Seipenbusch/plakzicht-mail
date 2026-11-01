@@ -77,7 +77,11 @@ DEFAULT_PREFS = {
     "claude": {"tone": "zakelijk", "aanhef": "u", "lang": "mail", "extra": ""},
     "notify": {"on": True, "sound": True, "desktop": True, "mute": []},
     "swipe": {"left": "archive", "right": "read"},   # vegen op de telefoon
+    "theme": "auto",                                  # licht/donker: auto (volgt het apparaat), light, dark
+    "counters": {},                                   # teller per map: "<mailbox>:<map>" -> unread/total/both/none
 }
+THEMES = ("auto", "light", "dark")
+COUNTER_MODES = ("unread", "total", "both", "none")
 SWIPE_ACTIONS = ("none", "archive", "delete", "read", "flag", "reply", "claim", "label", "move")
 CLAUDE_URL = os.environ.get("PLAKZICHT_CLAUDE_URL", "https://api.anthropic.com/v1/messages")
 CLAUDE_MODELS = [("claude-sonnet-5-5", "Claude Sonnet 5.5 (aanbevolen)"), ("claude-haiku-5-5", "Claude Haiku 5.5 (snel en goedkoop)"),
@@ -628,7 +632,7 @@ def _merge_prefs(raw):
         p = {}
     out = json.loads(json.dumps(DEFAULT_PREFS))
     for k, v in p.items():
-        if k in ("claude", "notify", "swipe") and isinstance(v, dict):
+        if k in ("claude", "notify", "swipe", "counters") and isinstance(v, dict):
             out[k].update(v)
         elif k in out:
             out[k] = v
@@ -1153,6 +1157,17 @@ class Api:
                     p[k] = {kk: int(min(600, max(18, vv))) for kk, vv in v.items() if kk in LIST_COLS and isinstance(vv, (int, float))}
                 elif k == "sort" and isinstance(v, dict) and v.get("key") in SORT_KEYS:
                     p[k] = {"key": v["key"], "dir": "asc" if v.get("dir") == "asc" else "desc"}
+                elif k == "theme" and v in THEMES:
+                    p[k] = v
+                elif k == "counters" and isinstance(v, dict):
+                    cnt = dict(p.get("counters") or {})
+                    for kk, vv in v.items():
+                        kk = str(kk)[:300]
+                        if vv in COUNTER_MODES:
+                            cnt[kk] = vv
+                        elif vv is None:
+                            cnt.pop(kk, None)  # terug naar de standaard
+                    p["counters"] = dict(list(cnt.items())[-500:])
                 elif k == "swipe" and isinstance(v, dict):
                     for side in ("left", "right"):
                         if v.get(side) in SWIPE_ACTIONS:

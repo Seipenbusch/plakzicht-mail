@@ -226,7 +226,7 @@ function deviceName() {
 }
 function boot(st) {
   S.st = st;
-  PANE = 'list'; applyDevice();
+  PANE = 'list'; applyDevice(); applyTheme(st.user.prefs.theme);
   $('#login').hidden = true; $('#app').hidden = false;
   $('#whoami').textContent = st.user.name;
   $('#btn-admin').hidden = st.user.role !== 'beheerder';
@@ -365,14 +365,14 @@ function renderSide() {
     h += `<div class="mbhead" data-mbhead="${mb.id}">
       <button class="tw" data-twmb="${mb.id}" aria-expanded="${open}" aria-label="${open ? 'Inklappen' : 'Uitklappen'}: ${esc(mb.address)}">${open ? ICON.chevDown : ICON.chev}</button>
       <button class="mbname" data-mb="${mb.id}" data-folder="${esc(inbox.id || '')}" data-drop="mb" title="${esc(mb.address)}">${esc(mb.display)}
-        <span class="kind">${mb.kind === 'persoonlijk' ? 'persoonlijk' : ''}</span><span class="n">${open ? '' : inbox.unread || ''}</span></button></div>`;
+        <span class="kind">${mb.kind === 'persoonlijk' ? 'persoonlijk' : ''}</span><span class="n">${open || !inbox.id ? '' : cntText(cntMode(mb.id, inbox), inbox)}</span></button></div>`;
     if (mb.error) h += `<div class="mberr" title="${esc(mb.error)}">${ICON.flag} Niet bereikbaar. ${esc(mb.error)}</div>`;
     if (!open) continue;
     for (const f of visibleFolders(mb)) {
       h += `<div class="frow" style="--d:${f.depth}">
         ${f.has_children ? `<button class="tw" data-twf="${mb.id}:${esc(f.id)}" aria-expanded="${f.open}" aria-label="${f.open ? 'Inklappen' : 'Uitklappen'}: ${esc(f.name)}">${f.open ? ICON.chevDown : ICON.chev}</button>` : '<span class="tw"></span>'}
         <button class="si fi ${v.mailbox_id === mb.id && v.folder === f.id ? 'on' : ''}" data-mb="${mb.id}" data-folder="${esc(f.id)}" data-drop="mb" title="${esc(f.name)}${f.total ? ' (' + f.total + ' mails)' : ''}">
-          ${folderIcon(f)}<span class="fn">${esc(f.name)}</span><span class="n">${f.unread || ''}</span></button></div>`;
+          ${folderIcon(f)}<span class="fn">${esc(f.name)}</span><span class="n">${cntText(cntMode(mb.id, f), f)}</span></button></div>`;
     }
     h += `<button class="si newf" data-newf="${mb.id}">${ICON.plus} Nieuwe map</button>`;
   }
@@ -430,8 +430,13 @@ function mailboxMenu(mbId) {
 function folderMenu(mbId, fid) {
   const f = folderOf(mbId, fid); if (!f) return mailboxMenu(mbId);
   const own = !f.wk, admin = S.st.user.role === 'beheerder';
-  const items = [{ n: 'Openen', icon: folderIcon(f), run: () => { S.view = { mailbox_id: mbId, folder: fid }; S.sel = null; S.mail = null; renderSide(); loadList(); renderReader(); renderPz(); } },
-    '-', { n: 'Nieuwe submap…', icon: ICON.plus, run: () => folderDialog('new', mbId, fid) }];
+  const cur = cntMode(mbId, f);
+  const cnt = Object.entries(CNT_NAMES).map(([k, n]) => ({ n, checked: cur === k, hint: cntText(k, f, true), run: () => setCounter(mbId, fid, k) }));
+  const items = isMob()
+    ? [{ head: 'Teller bij ' + f.name }, ...cnt, '-', { n: 'Nieuwe submap…', icon: ICON.plus, run: () => folderDialog('new', mbId, fid) }]
+    : [{ n: 'Openen', icon: folderIcon(f), run: () => { S.view = { mailbox_id: mbId, folder: fid }; S.sel = null; S.mail = null; renderSide(); loadList(); renderReader(); renderPz(); } },
+      { n: 'Teller', icon: ICON.list, sub: cnt },
+      '-', { n: 'Nieuwe submap…', icon: ICON.plus, run: () => folderDialog('new', mbId, fid) }];
   if (own) {
     items.push({ n: 'Hernoemen…', icon: ICON.pen, run: () => folderDialog('rename', mbId, fid) });
     // verplaatsen binnen dezelfde mailbox; niet in zichzelf of een eigen submap
@@ -575,7 +580,7 @@ function menuHtml(items) {
     const icon = it.act ? actIcon(it.act) : it.dot ? `<span class="ai"><span class="mdot" style="--c:${esc(it.dot)}"></span></span>` : `<span class="ai">${it.icon || ''}</span>`;
     const check = it.checked !== undefined ? `<span class="ck">${it.checked ? ICON.check : ''}</span>` : '';
     return `<div class="cmi ${it.sub ? 'has-sub' : ''} ${it.danger ? 'danger' : ''}" ${it.indent ? `style="--ind:${it.indent}"` : ''}>
-      <button type="button" role="menuitem" data-i="${i}" ${it.disabled ? 'disabled' : ''}>${icon}<span class="cl">${esc(it.n)}</span>${check}${it.k ? `<kbd>${esc(it.k)}</kbd>` : ''}${it.sub ? `<span class="arr">${ICON.chev}</span>` : ''}</button>
+      <button type="button" role="menuitem" data-i="${i}" ${it.disabled ? 'disabled' : ''}>${icon}<span class="cl">${esc(it.n)}</span>${it.hint ? `<span class="hint">${esc(it.hint)}</span>` : ''}${check}${it.k ? `<kbd>${esc(it.k)}</kbd>` : ''}${it.sub ? `<span class="arr">${ICON.chev}</span>` : ''}</button>
       ${it.sub ? `<div class="cmenu sub" role="menu">${menuHtml(it.sub)}</div>` : ''}</div>`;
   }).join('');
 }
@@ -1660,6 +1665,65 @@ function listTitle() {
   const mb = mailboxById(v.mailbox_id), f = folderOf(v.mailbox_id, v.folder);
   return esc(mb ? mb.display : '') + ' · ' + esc(f ? f.name : FOLDER_NAMES[v.folder] || '');
 }
+// ------------------------------------------------------------ tellers per map en voetregel onder de lijst
+const CNT_NAMES = { unread: 'Ongelezen', total: 'Totaal', both: 'Beide', none: 'Geen' };
+function cntMode(mbId, f) {
+  const c = (P().counters || {})[mbId + ':' + f.id];
+  if (CNT_NAMES[c]) return c;
+  return ['sent', 'archive', 'deleted'].includes(f.wk) ? 'none' : 'unread';  // standaard
+}
+function cntText(mode, f, plain) {
+  const un = f.unread || 0, tot = f.total || 0, t = x => plain ? String(x) : `<span class="t">${x}</span>`;
+  if (mode === 'unread') return un ? String(un) : (plain ? '0' : '');
+  if (mode === 'total') return t(tot);  // ook 0: dan zie je dat de teller aan staat
+  if (mode === 'both') return un ? `${un} ${t('/ ' + tot)}` : t(plain ? '0 / ' + tot : tot);
+  return '';
+}
+function setCounter(mbId, fid, mode) {
+  savePrefs({ counters: { ...(P().counters || {}), [mbId + ':' + fid]: mode } });
+  renderSide();
+}
+function footHtml(fv) {
+  const shown = S.mails.filter(m => !PENDING.has(m.id)).length + (S.older ? S.older.mails.length : 0);
+  const tot = fv ? fv.total || 0 : null, un = fv ? fv.unread || 0 : 0, sel = S.multi.size;
+  const filtered = S.filter !== 'alle' || !!S.search;
+  const how = S.search ? `zoeken “${esc(S.search)}”` : 'filter ' + esc(((FILTERS.find(x => x[0] === S.filter) || [])[1] || S.filter));
+  const n = x => x === 1 ? '1 mail' : x + ' mails';
+  let t;
+  if (sel && filtered) t = `<b>${sel} geselecteerd</b> · ${shown} gevonden (${how})${tot !== null ? ' van ' + tot : ''}`;
+  else if (sel) t = `<b>${sel} geselecteerd</b> van ${tot !== null ? Math.max(tot, shown) : shown}`;
+  else if (filtered) t = `<b>${shown} gevonden</b> (${how})${tot !== null ? ' van ' + tot : ''}`;
+  else if (tot !== null) t = `<b>${n(Math.max(tot, shown))}</b>${un ? ` · ${un} ongelezen` : ''}${shown < tot ? ` · ${shown} in de lijst` : ''}`;
+  else t = `<b>${n(shown)}</b>`;
+  return `<div class="lfoot" role="status" aria-live="polite"><span class="ell">${t}</span>${sel ? '<button class="linkish" id="btn-selclear">Opheffen</button>' : ''}</div>`;
+}
+
+// ------------------------------------------------------------ licht of donker
+ICON.sun = svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.3 17.7-1.4 1.4"/><path d="m19.1 4.9-1.4 1.4"/>');
+ICON.moon = svg('<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>');
+ICON.half = svg('<circle cx="12" cy="12" r="9"/><path d="M12 3v18" /><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor"/>');
+const THEME_NAMES = { auto: 'Automatisch', light: 'Licht', dark: 'Donker' };
+const THEME_ICON = { auto: 'half', light: 'sun', dark: 'moon' };
+const darkNow = t => t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+function applyTheme(t) {
+  t = THEME_NAMES[t] ? t : 'auto';
+  if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('pm-theme', t); } catch { /* geen opslag */ }
+  const meta = $('meta[name="theme-color"]'); if (meta) meta.content = darkNow(t) ? '#060908' : '#1f2a26';
+  const b = $('#btn-theme');
+  if (b) { b.innerHTML = `${ICON[THEME_ICON[t]]}<span>${THEME_NAMES[t]}</span> ▾`; b.title = 'Licht of donker: ' + THEME_NAMES[t].toLowerCase(); }
+  if ($('#m-theme')) $('#m-theme').innerHTML = ICON[THEME_ICON[t]];
+}
+function setTheme(t) { applyTheme(t); if (S.st) savePrefs({ theme: t }); }
+function themeItems() {
+  const cur = (S.st && P().theme) || 'auto';
+  return [{ head: 'Weergave' }, ...Object.entries(THEME_NAMES).map(([k, n]) => ({ n: k === 'auto' ? n + ' (volgt het apparaat)' : n, icon: ICON[THEME_ICON[k]], checked: cur === k, run: () => setTheme(k) }))];
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme((S.st && P().theme) || 'auto'));
+$('#btn-theme').onclick = () => { const r = $('#btn-theme').getBoundingClientRect(); showMenu(r.left, r.bottom + 4, themeItems()); };
+$('#m-theme').onclick = () => showMenu(0, innerHeight, themeItems());
+applyTheme((() => { try { return localStorage.getItem('pm-theme'); } catch { return 'auto'; } })());
+
 function initials(n) { return String(n || '?').split(/\s+/).map(x => x[0]).join('').slice(0, 2).toUpperCase(); }
 function collabChips(m) {
   let h = '';
@@ -1842,7 +1906,7 @@ function renderList() {
   const { mode, cols, narrow } = listMode(); lastMode = mode;
   const so = P().sort, groups = P().groups;
   const sortBtn = `<button class="sortbtn" id="btn-sort" title="Sorteren en groeperen">${esc(SORT_NAMES[so.key] || so.key)} ${so.dir === 'asc' ? '↑' : '↓'}</button>`;
-  let h = `<div class="listhead"><h1>${listTitle()} <small>${S.mails.length} ${S.mails.length === 1 ? 'mail' : 'mails'}</small>${syncNote}
+  let h = `<div class="listhead"><h1>${listTitle()}${syncNote}
     <span class="lh-right">${mode === 'compact' ? sortBtn : ''}<button class="iconbtn sm" id="btn-refresh" title="Vernieuwen" aria-label="Vernieuwen">${ICON.refresh}</button></span></h1>
     <div class="filters">${filterPills()}${narrow && !isTouchUI() ? '<button class="linkish narrowhint" id="btn-widen" title="De kolommen passen niet in deze breedte; daarom de compacte weergave">Kolommen passen niet: lijst breder maken</button>' : ''}</div></div>`;
   if (mode === 'kolommen') {
@@ -1898,9 +1962,11 @@ function renderList() {
   }
   if (canOlder && (!S.older || S.older.more)) h += `<div class="olderbox"><button class="btn small" id="btn-older">${S.older ? 'Nog oudere mails ophalen' : S.search ? 'Ook in oudere mails zoeken bij Microsoft' : 'Oudere mails ophalen bij Microsoft'}</button>
     ${S.older ? '' : `<div class="note">De lokale kopie bevat de mails van ${esc(periodName(mbv.cache_days).toLowerCase())}.</div>`}</div>`;
+  h += `<div class="lspacer"></div>${footHtml(fv)}`;
   const keepScroll = $('#list').scrollTop;
   if (!morph($('#list'), h)) return;  // niets veranderd: regels en knoppen blijven staan
   $('#list').scrollTop = keepScroll;
+  if ($('#btn-selclear')) $('#btn-selclear').onclick = () => { if (isMob()) { S.multi.clear(); renderList(); mobBar(); } else selClear(); };
   $('#list').classList.toggle('cols', mode === 'kolommen');
   const lh = $('#list .listhead'); if (lh) $('#list').style.setProperty('--lh', lh.offsetHeight + 'px');
   if ($('#btn-older')) $('#btn-older').onclick = loadOlder;
@@ -2475,10 +2541,10 @@ async function simulateIncoming() {
 
 // ------------------------------------------------------------ Plakzicht-paneel
 function renderPz() {
-  if (S.multi.size > 1) { $('#pz').innerHTML = `<div class="panel"><h2>Plakzicht</h2><p class="note">${S.multi.size} mails geselecteerd. Kies één mail om de order te zien.</p></div>`; return; }
+  if (S.multi.size > 1) { setHtml($('#pz'), `<div class="panel"><h2>Plakzicht</h2><p class="note">${S.multi.size} mails geselecteerd. Kies één mail om de order te zien.</p></div>`); mobPzBar(); return; }
   const m = S.mail;
   if (!m) {
-    $('#pz').innerHTML = `<div class="panel"><h2>Plakzicht</h2><p class="note">Open een mail. Staat er een ordernummer of offertenummer in, dan zie je de order hier.</p></div><div id="pz-today"></div>`;
+    setHtml($('#pz'), `<div class="panel"><h2>Plakzicht</h2><p class="note">Open een mail. Staat er een ordernummer of offertenummer in, dan zie je de order hier.</p></div><div id="pz-today"></div>`);
     todayHtml().then(h => { const slot = $('#pz-today'); if (!slot || S.mail) return; slot.innerHTML = h;
       if ($('#pz-cal')) $('#pz-cal').onclick = () => openCalendar();
       $$('#pz-today [data-open]').forEach(b => b.onclick = () => openOrder(b.dataset.open));
@@ -2883,7 +2949,9 @@ async function openMySettings(editId, section) {
 }
 function myView() {
   const p = P();
+  const th = p.theme || 'auto';
   $('#mybody').innerHTML = `<div class="grid2"><form class="panel form" id="vform"><h2>Maillijst</h2>
+      <fieldset><legend>Licht of donker</legend><div class="checks">${Object.entries(THEME_NAMES).map(([k, n]) => `<label><input type="radio" name="theme" value="${k}" ${th === k ? 'checked' : ''}> ${n}${k === 'auto' ? ' (volgt de instelling van je computer of telefoon)' : ''}</label>`).join('')}</div></fieldset>
       <fieldset><legend>Weergave</legend><div class="checks">
         <label><input type="radio" name="listview" value="kolommen" ${p.listview === 'kolommen' ? 'checked' : ''}> Kolommen (zoals Outlook: Van, Onderwerp, Ontvangen, Grootte…)</label>
         <label><input type="radio" name="listview" value="compact" ${p.listview !== 'kolommen' ? 'checked' : ''}> Compact (afzender, onderwerp en labels onder elkaar)</label></div>
@@ -2895,9 +2963,15 @@ function myView() {
       <fieldset><legend>Beantwoorden en doorsturen</legend><div class="checks">
         <label><input type="radio" name="reply_in" value="pane" ${p.reply_in === 'pane' ? 'checked' : ''}> In het leesvenster rechts (de lijst en Plakzicht blijven zichtbaar)</label>
         <label><input type="radio" name="reply_in" value="window" ${p.reply_in !== 'pane' ? 'checked' : ''}> Volledig scherm</label></div></fieldset>
-    </form><div class="panel"><h2>Bewaard per gebruiker</h2><p class="note">Deze instellingen staan op de server bij jouw naam, dus je hebt ze op elke pc waar je inlogt. Ook je sortering, gekozen kolommen en kolombreedtes worden bewaard.</p></div></div>`;
+    </form><div style="display:grid;gap:12px;align-content:start"><div class="panel"><h2>Tellers per map <small>wat je achter een map ziet</small></h2>
+      <p class="note">Ongelezen, totaal, beide of geen. Ook te kiezen met de rechtermuisknop op een map (telefoon: lang drukken).</p>
+      ${S.st.mailboxes.map(mb => `<div class="cntmb"><b>${esc(mb.display)}</b>${mb.folders.map(f => `<label class="cntrow" style="--d:${f.depth || 0}">
+        <span class="ell">${folderIcon(f)} ${esc(f.name)}</span><select data-cnt="${mb.id}|${esc(f.id)}">${Object.entries(CNT_NAMES).map(([k, n]) => `<option value="${k}" ${cntMode(mb.id, f) === k ? 'selected' : ''}>${n}${k !== 'none' ? ' · ' + esc(cntText(k, f, true)) : ''}</option>`).join('')}</select></label>`).join('')}</div>`).join('')}</div>
+      <div class="panel"><h2>Bewaard per gebruiker</h2><p class="note">Deze instellingen staan op de server bij jouw naam, dus je hebt ze op elke pc waar je inlogt. Ook je sortering, gekozen kolommen en kolombreedtes worden bewaard.</p></div></div></div>`;
+  $$('#mybody [data-cnt]').forEach(sel => sel.onchange = () => { const [mb, fid] = sel.dataset.cnt.split(/\|(.*)/s); setCounter(+mb, fid, sel.value); toast('Opgeslagen'); });
   $$('#vform input').forEach(i => i.onchange = () => {
     const f = new FormData($('#vform'));
+    if (f.get('theme') !== (P().theme || 'auto')) return setTheme(f.get('theme'));
     savePrefs({ listview: f.get('listview'), groups: f.has('groups'), reply_in: f.get('reply_in') });
     if (f.get('density') !== document.body.dataset.density) setDensity(f.get('density'));
     else toast('Opgeslagen');
@@ -3377,6 +3451,7 @@ ICON.menu = svg('<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>');
 ICON.back = svg('<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>');
 function applyDevice() {
   document.body.classList.toggle('mob', isMob());
+  if ($('#m-theme')) $('#m-theme').innerHTML = ICON[THEME_ICON[(S.st && P().theme) || 'auto']];
   document.body.classList.toggle('tab', isTab());
   document.body.dataset.pane = isMob() ? PANE : '';
   if (!isTouchUI()) { closeDrawer(); document.body.classList.remove('pzopen', 'msearch'); }
@@ -3421,6 +3496,19 @@ $('#side').addEventListener('click', e => {  // map of label gekozen: menu dicht
   const b = e.target.closest('[data-mb], [data-label], #btn-new, #btn-rules');
   if (b && !b.matches('[data-twmb], [data-twf], [data-newf]')) setTimeout(closeDrawer, 60);
 });
+// lang drukken op een map in het schuifmenu: teller en mapacties (iPhone kent geen rechtermuisknop)
+(() => {
+  let t = null, b0 = null;
+  $('#side').addEventListener('pointerdown', e => {
+    const b = e.pointerType !== 'mouse' && isTouchUI() && e.target.closest('.si.fi[data-mb], .mbname[data-mb]');
+    clearTimeout(t); b0 = b || null; if (!b) return;
+    t = setTimeout(() => { b._lp = true; showMenu(0, innerHeight, b.classList.contains('mbname') ? mailboxMenu(+b.dataset.mb) : folderMenu(+b.dataset.mb, b.dataset.folder)); }, 480);
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) $('#side').addEventListener(ev, () => clearTimeout(t));
+  $('#side').addEventListener('pointermove', e => { if (b0 && (Math.abs(e.movementX) > 4 || Math.abs(e.movementY) > 4)) clearTimeout(t); });
+  $('#side').addEventListener('click', e => { const b = e.target.closest('[data-mb]'); if (b && b._lp) { b._lp = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+  $('#side').addEventListener('contextmenu', e => { if (isTouchUI() && e.target.closest('[data-mb]')) e.preventDefault(); }, true);
+})();
 $('#m-search').onclick = () => {
   const on = !document.body.classList.contains('msearch');
   document.body.classList.toggle('msearch', on);
@@ -3466,13 +3554,15 @@ function mobSel(id) {
   if (navigator.vibrate) try { navigator.vibrate(12); } catch { /* */ }
   renderList(); mobBar();
 }
+function mobTotal() { const f = S.view && S.view.mailbox_id ? folderOf(S.view.mailbox_id, S.view.folder) : null; return Math.max(f ? f.total || 0 : 0, S.mails.length); }
 function renderMobBulk() {
   const bar = $('#mbulk'); if (!bar) return;
   const show = isMob() && S.multi.size > 0 && PANE === 'list';
   bar.hidden = !show;
+  document.body.classList.toggle('msel', show);
   if (!show) return;
   const rows = [...S.multi].map(rowOf).filter(Boolean);
-  bar.innerHTML = `<div class="mb-top"><button class="mbtn" data-mb-act="clear" aria-label="Selectie opheffen">${svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>')}</button><b>${S.multi.size} geselecteerd</b>
+  bar.innerHTML = `<div class="mb-top"><button class="mbtn" data-mb-act="clear" aria-label="Selectie opheffen">${svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>')}</button><b>${S.multi.size} geselecteerd <span class="muted">van ${mobTotal()}</span></b>
       <button class="linkish" data-mb-act="all">Alles</button></div>
     <div class="mb-btns">${[['archive', 'Archiveren'], ['delete', 'Verwijderen'], ['move', 'Verplaatsen'], ['label', 'Label'], ['claim', 'Toewijzen'], ['read', rows.some(r => !r.is_read) ? 'Gelezen' : 'Ongelezen'], ['flag', 'Vlag']]
       .map(([a, n]) => `<button data-mb-act="${a}" style="--ac:var(--a-${a === 'claim' ? 'claim' : ACT[a].c})">${ICON[ACT[a].i]}<span>${n}</span></button>`).join('')}</div>`;
@@ -3539,6 +3629,7 @@ function wireTouchRow(r, id) {
   let x0 = null, y0 = 0, dx = 0, on = false, pid = null, bg = null, lp = null;
   const reset = (anim = true) => {
     r.style.transition = anim ? 'transform .18s ease' : ''; r.style.transform = '';
+    setTimeout(() => r.classList.remove('swiping'), anim ? 200 : 0);
     if (bg) { const b = bg; setTimeout(() => b.remove(), anim ? 200 : 0); bg = null; }
     on = false; x0 = null; pid = null;
   };
@@ -3555,7 +3646,7 @@ function wireTouchRow(r, id) {
       if (Math.abs(mx) > 6 || Math.abs(my) > 6) clearTimeout(lp);
       if (Math.abs(my) > 10 && Math.abs(my) > Math.abs(mx)) { x0 = null; return; }  // gewoon scrollen
       if (Math.abs(mx) < 14 || S.multi.size || !(swipeOf(-1) || swipeOf(1))) return;
-      on = true; try { r.setPointerCapture(pid); } catch { /* */ }
+      on = true; r.classList.add('swiping'); try { r.setPointerCapture(pid); } catch { /* */ }
       const rr = r.getBoundingClientRect();
       bg = document.createElement('div'); bg.className = 'swipebg';
       Object.assign(bg.style, { top: rr.top + 'px', left: rr.left + 'px', width: rr.width + 'px', height: rr.height + 'px' });

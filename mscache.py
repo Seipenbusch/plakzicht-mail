@@ -482,9 +482,11 @@ class MailCache:
                 "SELECT folder_id, SUM(is_read=0), COUNT(*) FROM ms_msgs WHERE mailbox_id=? GROUP BY folder_id", (mailbox_id,))}
         for f in rows:
             f["has_children"] = bool(f["has_children"])
-            if f["id"] in synced:  # tellers uit de kopie: kloppen direct na lezen/verplaatsen
-                f["unread"], f["total"] = counts.get(f["id"], (0, 0))
-                f["unread"] = f["unread"] or 0
+            if f["id"] in synced:
+                # ongelezen uit de kopie: klopt direct na lezen of verplaatsen. Totaal van Microsoft (ook oudere mail
+                # buiten de bewaarperiode), maar nooit minder dan wat er in de kopie staat.
+                un, tot = counts.get(f["id"], (0, 0))
+                f["unread"], f["total"] = un or 0, max(f.get("total") or 0, tot or 0)
             f["synced"] = f["id"] in synced
         return rows
 
