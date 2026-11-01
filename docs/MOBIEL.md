@@ -33,6 +33,9 @@ Plakzicht Mail werkt in de browser van je telefoon en past zich vanzelf aan: op 
 | Meerdere mails | **lang drukken** op een mail, daarna tikken op andere mails; onderin verschijnen de acties |
 | Vegen | naar links standaard **archiveren**, naar rechts **gelezen/ongelezen**. Archiveren en verwijderen kun je 5 seconden ongedaan maken |
 | Agenda, instellingen, uitloggen | je initialen rechtsboven |
+| Licht of donker | knop (zon/maan/half) naast het vergrootglas |
+| Teller bij een map kiezen | in het mappenmenu **lang drukken** op de map › ongelezen, totaal, beide of geen |
+| Aantal mails | onderin de lijst; bij een selectie staat er hoeveel je hebt geselecteerd |
 
 **Vegen zelf kiezen:** *Mijn instellingen › Mobiel*. Per richting: niets, archiveren, verwijderen, gelezen/ongelezen,
 vlag, beantwoorden, oppakken, label kiezen of verplaatsen. De keuze geldt op al je telefoons en tablets.

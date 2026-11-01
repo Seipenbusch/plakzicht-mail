@@ -12,6 +12,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Plakzicht Mail">
+<script>try { var t = localStorage.getItem('pm-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body data-density="middel">
@@ -48,12 +49,14 @@
       <input id="search" type="search" placeholder="Zoek in deze map: mail, ordernummer of klant…">
     </label>
     <div class="topright">
+      <button class="navbtn themebtn" id="btn-theme" aria-label="Licht of donker"></button>
       <button class="navbtn bell" id="btn-notify" aria-label="Meldingen bij nieuwe mail"></button>
       <button class="navbtn" id="nav-rules">Regels</button>
       <button class="navbtn" id="btn-admin" hidden>Beheer</button>
       <button id="whoami" class="navbtn who" title="Mijn instellingen: handtekening en wachtwoord"></button>
       <button class="navbtn" id="btn-logout">Uitloggen</button>
     </div>
+    <button class="mbtn" id="m-theme" aria-label="Licht of donker"></button>
     <button class="mbtn" id="m-search" aria-label="Zoeken"></button>
     <button class="mbtn mme" id="m-me" aria-label="Menu"></button>
   </header>

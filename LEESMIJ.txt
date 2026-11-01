@@ -29,6 +29,17 @@ app of de browser. Uitgebreid: docs/UNRAID.md, docs/WINDOWS.md, docs/MAC.md.
 Vanuit de broncode (ontwikkelen): "Start server.bat", of python app.py --server.
 "Start Plakzicht Mail.bat" opent alles op deze pc in een eigen venster.
 
+Licht of donker, tellers en voetregel
+-------------------------------------
+- Knop in de bovenbalk (zon/maan): Automatisch (volgt het apparaat), Licht
+  of Donker. Per gebruiker bewaard; ook in Mijn instellingen > Weergave.
+- Teller achter elke map: ongelezen (standaard), totaal, beide of geen.
+  Kiezen met de rechtermuisknop op een map > Teller (telefoon: lang drukken
+  op de map), of voor alle mappen in Mijn instellingen > Weergave.
+  Standaard tonen Verzonden, Archief en Verwijderde items geen teller.
+- Onder de maillijst: aantal mails en ongelezen, met een filter of zoeken
+  hoeveel er gevonden zijn, en hoeveel je hebt geselecteerd (Opheffen).
+
 Telefoon en tablet
 ------------------
 Open https://mail.plakzicht.nl op je telefoon; installeer het als app
