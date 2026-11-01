@@ -711,3 +711,159 @@ dialog:has(.evedit), dialog:has(.evshow) { width: min(600px, 94vw); }
   .devtable td[data-label="Laatst gebruikt"]::before { content: "Laatst gebruikt: "; }
   .devtable td:last-child { grid-row: 1 / 3; grid-column: 2; align-self: center; }
 }
+
+/* ================================================================ telefoon en tablet
+   body.mob = telefoon (≤ 760 px): één scherm tegelijk (data-pane="list" of "read").
+   body.tab = tablet (761–1100 px): lijst en mail naast elkaar. Beide: mappen als schuifmenu, Plakzicht als balk. */
+@supports (height: 100dvh) { #app { height: 100dvh; } }
+.mbtn, .mtitle, .fab, .mbulk, .pzbar-m, .scrim { display: none; }
+body.mob .mbtn, body.tab #m-menu { display: inline-grid; place-items: center; width: 42px; height: 42px; border: 0; background: none; color: #fff;
+  border-radius: 10px; cursor: pointer; flex: none; padding: 0; }
+.mbtn svg { width: 22px; height: 22px; }
+.mbtn:active { background: var(--top2); }
+.mme { font-weight: 700; font-size: 13px; }
+body.mob .mme { width: 34px; height: 34px; border-radius: 50%; background: var(--top2); }
+
+/* schuifmenu met mappen en labels */
+body.mob .side, body.tab .side { position: fixed; z-index: 45; top: 0; bottom: 0; left: 0; width: min(310px, 86vw); border-radius: 0 14px 14px 0;
+  transform: translateX(-105%); transition: transform .22s ease; padding-top: calc(12px + env(safe-area-inset-top));
+  padding-bottom: calc(12px + env(safe-area-inset-bottom)); box-shadow: 0 10px 40px rgba(0, 0, 0, .25); visibility: hidden; }
+body.drawer .side { transform: none; visibility: visible; }
+body.mob .si, body.tab .si { padding: 9px 8px; font-size: 15px; }
+body.mob .si.sub, body.tab .si.sub { font-size: 14.5px; }
+body.drawer .scrim, body.mob.pzopen .scrim, body.tab.pzopen .scrim { display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, .35); z-index: 40; }
+body.mob #btn-collapse, body.tab #btn-collapse, body.mob .gutter, body.tab .gutter { display: none; }
+@media (prefers-reduced-motion: reduce) { body.mob .side, body.tab .side { transition: none; } }
+
+/* Plakzicht als balk boven de mail; uitgeklapt als blad */
+body.mob .pzbar-m:not([hidden]), body.tab .pzbar-m:not([hidden]) { display: flex; align-items: center; gap: 8px; width: 100%; border: 0;
+  border-bottom: 1px solid var(--line); background: var(--card); color: var(--muted); padding: 11px 14px; font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.pzbar-m.has { color: var(--ink); font-weight: 600; }
+.pzbar-m.has svg { color: var(--brand); }
+.pzbar-m svg { width: 18px; height: 18px; flex: none; }
+.pzbar-m .ell { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pzbar-m .chev { color: var(--muted); }
+body.mob .pz, body.tab .pz { display: none; }
+body.mob.pzopen .pz { display: flex; position: fixed; left: 0; right: 0; bottom: 0; max-height: 80dvh; overflow: auto; z-index: 46; background: var(--bg);
+  padding: 12px 12px calc(16px + env(safe-area-inset-bottom)); border-radius: 16px 16px 0 0; box-shadow: 0 -8px 30px rgba(0, 0, 0, .25); }
+body.tab.pzopen .pz { display: flex; position: fixed; top: 0; bottom: 0; right: 0; width: min(380px, 90vw); overflow: auto; z-index: 46; background: var(--bg);
+  padding: calc(12px + env(safe-area-inset-top)) 12px 16px; box-shadow: -8px 0 30px rgba(0, 0, 0, .2); }
+
+/* tablet: lijst en mail naast elkaar */
+body.tab .main { grid-template-columns: minmax(300px, 40%) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); column-gap: 10px; }
+body.tab #list { grid-column: 1; grid-row: 1 / 3; }
+body.tab #pzbar { grid-column: 2; grid-row: 1; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; }
+body.tab #reader { grid-column: 2; grid-row: 2; }
+body.tab #pzbar[hidden] + #reader { grid-row: 1 / 3; }
+
+/* telefoon: bovenbalk */
+body.mob .topbar { padding: calc(6px + env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 6px max(8px, env(safe-area-inset-left)); gap: 4px; flex-wrap: nowrap; }
+body.mob .topbar .logo, body.mob #modebadge, body.mob .topnav, body.mob .topright, body.mob .topsearch { display: none; }
+body.mob .mtitle { display: block; flex: 1; min-width: 0; font-weight: 700; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 2px; }
+body.mob.msearch .topbar { flex-wrap: wrap; }
+body.mob.msearch .topsearch { display: flex; order: 10; flex: 1 1 100%; max-width: none; padding: 2px 4px 4px; }
+body.mob .topsearch input { font-size: 16px; padding: 9px 12px; border-radius: 10px; }
+body.mob #ribbon { display: none; }
+
+/* telefoon: één scherm tegelijk */
+body.mob .main { display: flex; flex-direction: column; padding: 0; }
+body.mob .list, body.mob .reader { flex: 1; min-height: 0; border: 0; border-radius: 0; }
+body.mob[data-pane="list"] .reader, body.mob[data-pane="list"] #pzbar { display: none; }
+body.mob[data-pane="read"] .list { display: none; }
+body.mob .list { padding-bottom: calc(96px + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
+body.mob .listhead { padding: 8px 12px; }
+body.mob .listhead h1 { font-size: 13px; color: var(--muted); font-weight: 600; }
+body.mob .filters { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+body.mob .filters .pill { flex: none; padding: 6px 12px; font-size: 13px; }
+body.mob .mrow, body.tab .mrow { padding: 12px 14px; font-size: 15px; background: var(--card); position: relative; z-index: 2; touch-action: pan-y;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+body.mob .mrow .date, body.tab .mrow .date { font-size: 12.5px; }
+body.mob .mrow.sel { background: var(--card); border-left-color: transparent; }
+body.mob .mrow.msel { background: var(--sel); border-left-color: var(--brand); }
+body.mob .grp { padding: 8px 14px; }
+
+/* vegen */
+.swipebg { position: fixed; z-index: 1; display: flex; align-items: center; padding: 0 22px; pointer-events: none; color: var(--ac);
+  background: color-mix(in srgb, var(--ac) 18%, var(--card)); transition: background .12s; }
+.swipebg.r { justify-content: flex-start; } .swipebg.l { justify-content: flex-end; }
+.swipebg.go { background: var(--ac); color: #fff; }
+.swipebg span { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+.swipebg svg { width: 22px; height: 22px; }
+
+/* knop Nieuwe mail */
+body.mob .fab:not([hidden]) { display: flex; align-items: center; gap: 8px; position: fixed; z-index: 30; right: max(16px, env(safe-area-inset-right));
+  bottom: calc(18px + env(safe-area-inset-bottom)); padding: 14px 18px; border: 0; border-radius: 18px; background: var(--brand); color: var(--brand-ink);
+  font: inherit; font-size: 15px; font-weight: 600; box-shadow: 0 6px 20px rgba(0, 0, 0, .25); cursor: pointer; }
+.fab svg { width: 20px; height: 20px; }
+
+/* selectie (lang drukken) */
+body.mob .mbulk:not([hidden]) { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 31; background: var(--card); border-top: 1px solid var(--line);
+  padding: 6px 6px calc(8px + env(safe-area-inset-bottom)); box-shadow: 0 -4px 16px rgba(0, 0, 0, .12); }
+.mbulk .mb-top { display: flex; align-items: center; gap: 8px; padding: 0 4px 4px; font-size: 15px; }
+.mbulk .mb-top b { flex: 1; }
+.mbulk .mbtn, body.mob .mbulk .mbtn { display: inline-grid; color: var(--ink); width: 36px; height: 36px; }
+.mbulk .mb-btns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; }
+.mbulk .mb-btns button { display: grid; justify-items: center; gap: 3px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: none; color: var(--ink); padding: 7px 2px; border-radius: 8px; font: inherit; font-size: 11.5px; cursor: pointer; }
+.mbulk .mb-btns button:active { background: var(--soft); }
+.mbulk .mb-btns svg { width: 22px; height: 22px; color: var(--ac); }
+
+/* mail lezen */
+body.mob .rbar { gap: 0; padding: 4px 6px; overflow-x: auto; scrollbar-width: none; position: sticky; top: 0; background: var(--card); z-index: 3; }
+body.mob .rbar .sbtn span { display: none; }
+body.mob .rbar .sbtn { padding: 9px 10px; }
+body.mob .rbar .sbtn svg { width: 21px; height: 21px; }
+body.mob .rhead { padding: 10px 14px 6px; }
+body.mob .rhead h1 { font-size: 18px; }
+body.mob .rbody { min-height: 60dvh; border-radius: 0; }
+body.mob .reader .collab, body.mob .aislot { margin-left: 0; margin-right: 0; }
+
+/* menu's als blad van onderen */
+.cmenu.sheet { left: 0 !important; right: 0; bottom: 0; top: auto !important; width: 100%; max-width: none; border-radius: 16px 16px 0 0; max-height: 78dvh;
+  overflow: auto; padding: 8px 8px calc(10px + env(safe-area-inset-bottom)); }
+.cmenu.sheet .cmi > button { padding: 11px 12px; font-size: 15px; }
+.cmenu.sheet .chead { font-size: 13px; }
+.cmenu.sheet .cmenu.sub { position: static; box-shadow: none; border: 0; max-height: none; margin-left: 22px; padding: 0; }
+.cmenu.sheet .cmi:hover > .cmenu.sub, .cmenu.sheet .cmi:focus-within > .cmenu.sub { display: none; }
+.cmenu.sheet .cmi.open > .cmenu.sub { display: block; }
+.cmenu.sheet .cmi.has-sub .arr { transform: rotate(90deg); }
+body.menuopen::after { content: ""; position: fixed; inset: 0; background: rgba(0, 0, 0, .3); z-index: 79; }
+
+/* meldingen onderin, overlays en formulieren */
+.toast .undo { margin-left: 12px; border: 0; background: none; color: var(--brand-soft); font: inherit; font-weight: 700; cursor: pointer; padding: 4px 2px; text-decoration: underline; }
+body.mob .toast { bottom: calc(86px + env(safe-area-inset-bottom)); font-size: 14px; display: flex; align-items: center; }
+body.mob .toast[hidden] { display: none; }
+body.mob .overlay { inset: 0; z-index: 35; padding: env(safe-area-inset-top) 12px calc(24px + env(safe-area-inset-bottom)); }
+body.mob .ohead { gap: 8px; padding: 10px 0 8px; }
+body.mob .ohead h1 { font-size: 18px; }
+body.mob .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+body.mob .tabs .pill { flex: none; }
+body.mob input, body.mob select, body.mob textarea { font-size: 16px; }   /* iPhone zoomt anders in */
+body.mob dialog { width: calc(100vw - 16px); max-width: none; max-height: calc(100dvh - 16px); overflow: auto; padding: 16px; }
+body.mob .dlgbtns .btn { padding: 9px 14px; }
+
+/* agenda: lijst */
+.agl { display: grid; gap: 12px; padding: 4px 0 16px; }
+.agday { display: grid; gap: 6px; }
+.agh { justify-self: start; border: 0; background: none; padding: 0; font: inherit; font-weight: 700; font-size: 14px; color: var(--ink); cursor: pointer; }
+.agh::first-letter { text-transform: uppercase; }
+.agday.today .agh { color: var(--brand); }
+.agev { display: flex; gap: 12px; align-items: flex-start; text-align: left; border: 1px solid var(--line); border-left: 4px solid var(--c); background: var(--card);
+  color: var(--ink); border-radius: 8px; padding: 9px 12px; font: inherit; cursor: pointer; }
+.agev .agt { font-size: 13px; color: var(--muted); min-width: 88px; font-variant-numeric: tabular-nums; }
+.agev .ags { display: grid; gap: 2px; min-width: 0; }
+.agev .ags b { font-weight: 600; overflow-wrap: anywhere; }
+#cal-add svg { width: 16px; height: 16px; vertical-align: -3px; }
+body:not(.mob):not(.tab) #cal-add { display: none; }   /* op de computer staat de knop in de zijkolom */
+body.mob .cal-head { flex-wrap: wrap; gap: 6px; padding: 8px 0; }
+body.mob .cal-head h1 { order: -1; flex: 1 1 100%; font-size: 17px; }
+body.mob .cal-head .grow { display: none; }
+body.mob #cal-back span { display: none; }
+body.mob .cal-main { padding: 0; }
+
+/* Mijn instellingen › Mobiel */
+.swprev { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.swp { border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 600; color: #fff; background: var(--ac); }
+.swp.r { text-align: right; }
+
+.cmenu.sheet kbd { display: none; }
+body.mob .mrow .selbox, body.tab .mrow .selbox { display: none; }

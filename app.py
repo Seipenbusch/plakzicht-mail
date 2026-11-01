@@ -76,7 +76,9 @@ DEFAULT_PREFS = {
     "colw": {}, "sort": {"key": "date", "dir": "desc"},
     "claude": {"tone": "zakelijk", "aanhef": "u", "lang": "mail", "extra": ""},
     "notify": {"on": True, "sound": True, "desktop": True, "mute": []},
+    "swipe": {"left": "archive", "right": "read"},   # vegen op de telefoon
 }
+SWIPE_ACTIONS = ("none", "archive", "delete", "read", "flag", "reply", "claim", "label", "move")
 CLAUDE_URL = os.environ.get("PLAKZICHT_CLAUDE_URL", "https://api.anthropic.com/v1/messages")
 CLAUDE_MODELS = [("claude-sonnet-5-5", "Claude Sonnet 5.5 (aanbevolen)"), ("claude-haiku-5-5", "Claude Haiku 5.5 (snel en goedkoop)"),
                  ("claude-opus-5-5", "Claude Opus 5.5 (krachtigst)")]
@@ -626,7 +628,7 @@ def _merge_prefs(raw):
         p = {}
     out = json.loads(json.dumps(DEFAULT_PREFS))
     for k, v in p.items():
-        if k in ("claude", "notify") and isinstance(v, dict):
+        if k in ("claude", "notify", "swipe") and isinstance(v, dict):
             out[k].update(v)
         elif k in out:
             out[k] = v
@@ -1151,6 +1153,10 @@ class Api:
                     p[k] = {kk: int(min(600, max(18, vv))) for kk, vv in v.items() if kk in LIST_COLS and isinstance(vv, (int, float))}
                 elif k == "sort" and isinstance(v, dict) and v.get("key") in SORT_KEYS:
                     p[k] = {"key": v["key"], "dir": "asc" if v.get("dir") == "asc" else "desc"}
+                elif k == "swipe" and isinstance(v, dict):
+                    for side in ("left", "right"):
+                        if v.get(side) in SWIPE_ACTIONS:
+                            p["swipe"][side] = v[side]
                 elif k == "notify" and isinstance(v, dict):
                     n = p["notify"]
                     for kk in ("on", "sound", "desktop"):

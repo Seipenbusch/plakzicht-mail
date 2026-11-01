@@ -17,6 +17,7 @@ TESTS = [
     "test_werkplek",
     "test_installatie",
     "test_interface",
+    "test_mobiel",
 ]
 
 
