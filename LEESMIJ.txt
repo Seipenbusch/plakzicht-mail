@@ -29,6 +29,20 @@ app of de browser. Uitgebreid: docs/UNRAID.md, docs/WINDOWS.md, docs/MAC.md.
 Vanuit de broncode (ontwikkelen): "Start server.bat", of python app.py --server.
 "Start Plakzicht Mail.bat" opent alles op deze pc in een eigen venster.
 
+Telefoon en tablet
+------------------
+Open https://mail.plakzicht.nl op je telefoon; installeer het als app
+(iPhone: Deel > Zet op beginscherm; Android: menu > App installeren).
+- Telefoon: een scherm tegelijk. Mappen onder het menu linksboven, Nieuwe
+  mail rechtsonder, terug met de pijl of de terugknop van de telefoon.
+- Plakzicht staat als balk boven de mail; tik om het uit te klappen.
+- Lang drukken op een mail selecteert hem; tik daarna op andere mails.
+- Vegen: standaard links = archiveren, rechts = gelezen/ongelezen.
+  Zelf kiezen: Mijn instellingen > Mobiel. Archiveren en verwijderen
+  kun je 5 seconden ongedaan maken.
+- Agenda als lijst of per dag. Tablet: lijst en mail naast elkaar.
+Uitleg voor medewerkers: docs/MOBIEL.md.
+
 Ingelogd blijven
 ----------------
 - Vink bij het inloggen "Ingelogd blijven op deze computer" aan; na een

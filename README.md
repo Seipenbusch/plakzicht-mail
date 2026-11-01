@@ -8,6 +8,7 @@ Claude, en orders en offertes uit [Plakzicht](https://github.com/Seipenbusch/Pla
 | **Server** | Docker op Unraid – [docs/UNRAID.md](docs/UNRAID.md). Lokaal `http://<unraid>:8765`, via internet `https://mail.plakzicht.nl` (Cloudflare Tunnel + Access). |
 | **Windows** | `PlakzichtMail-setup.exe` (Releases), keuze *Werkplek* of *Server en app* – [docs/WINDOWS.md](docs/WINDOWS.md). |
 | **Mac** | In de browser, als app te installeren – [docs/MAC.md](docs/MAC.md). |
+| **Telefoon en tablet** | In de browser of als app op het beginscherm (iPhone en Android), met vegen en lang drukken – [docs/MOBIEL.md](docs/MOBIEL.md). |
 
 Gebruik van de app zelf: [LEESMIJ.txt](LEESMIJ.txt).
 

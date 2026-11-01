@@ -202,7 +202,8 @@ async function showLogin() {
     $('#keepdays').textContent = info.remember ? `(tot ${info.remember} dagen zonder gebruik)` : '';
     S.version = info.version;
   } catch { /* geen info */ }
-  setTimeout(() => $('#loginform [name=username]').focus(), 50);
+  // alleen als je nog niet zelf in een veld zit (anders belandt je wachtwoord achter je gebruikersnaam)
+  setTimeout(() => { if (!document.activeElement || !document.activeElement.closest('#loginform')) $('#loginform [name=username]').focus(); }, 50);
 }
 $('#loginform').addEventListener('submit', async e => {
   e.preventDefault();
@@ -225,6 +226,7 @@ function deviceName() {
 }
 function boot(st) {
   S.st = st;
+  PANE = 'list'; applyDevice();
   $('#login').hidden = true; $('#app').hidden = false;
   $('#whoami').textContent = st.user.name;
   $('#btn-admin').hidden = st.user.role !== 'beheerder';
@@ -333,7 +335,7 @@ function visibleFolders(mb) {
 function renderSide() {
   const v = S.view || {};
   let h;
-  if (S.layout && S.layout.collapsed) {
+  if (S.layout && S.layout.collapsed && !isTouchUI()) {
     h = `<div class="rail"><button class="ri" id="btn-collapse" title="Zijbalk uitklappen" aria-label="Zijbalk uitklappen">${ICON.expand}</button>
       <button class="ri newmail" id="btn-new" title="Nieuwe mail" aria-label="Nieuwe mail">${ICON.pen}</button></div><div class="rail">`;
     for (const mb of S.st.mailboxes) {
@@ -565,7 +567,7 @@ async function doAct(a, id, extra) {
 }
 
 // ------------------------------------------------------------ menu (rechtermuisknop en uitklapmenu's)
-function closeMenu() { $$('.cmenu.root').forEach(m => m.remove()); }
+function closeMenu() { $$('.cmenu.root').forEach(m => m.remove()); document.body.classList.remove('menuopen'); }
 function menuHtml(items) {
   return items.map((it, i) => {
     if (it === '-') return '<div class="csep" role="separator"></div>';
@@ -583,10 +585,12 @@ function showMenu(x, y, items) {
   m.className = 'cmenu root'; m.setAttribute('role', 'menu');
   m.innerHTML = menuHtml(items);
   document.body.appendChild(m);
+  const sheet = isMob();
+  if (sheet) { m.classList.add('sheet'); document.body.classList.add('menuopen'); }
   const r = m.getBoundingClientRect();
-  m.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 4)) + 'px';
-  m.style.top = Math.max(4, Math.min(y, innerHeight - r.height - 4)) + 'px';
-  if (x + r.width * 2 > innerWidth) m.classList.add('flip');
+  if (!sheet) m.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 4)) + 'px';
+  if (!sheet) m.style.top = Math.max(4, Math.min(y, innerHeight - r.height - 4)) + 'px';
+  if (!sheet && x + r.width * 2 > innerWidth) m.classList.add('flip');
   const walk = (box, list) => {
     $$(':scope > .cmi > button', box).forEach(b => {
       const it = list[+b.dataset.i];
@@ -599,7 +603,7 @@ function showMenu(x, y, items) {
     });
   };
   walk(m, items);
-  const first = $('button:not([disabled])', m); if (first) first.focus();
+  const first = $('button:not([disabled])', m); if (first && !sheet) first.focus();
   m.addEventListener('keydown', e => {
     const all = $$('button:not([disabled])', m).filter(b => b.offsetParent !== null);
     const i = all.indexOf(document.activeElement);
@@ -646,7 +650,7 @@ function mailMenu(id) {
   const row = rowOf(id);
   const it = a => ({ n: ACT[a].n, act: a, k: ACT[a].k, run: () => doAct(a, id) });
   return [
-    { n: 'Openen', icon: ICON.mailOpen, run: () => openMail(id) }, it('popout'), '-',
+    ...(isTouchUI() ? [] : [{ n: 'Openen', icon: ICON.mailOpen, run: () => openMail(id) }, it('popout'), '-']),
     row && row.claim && row.claim.mine ? it('unclaim') : { ...it('claim'), disabled: !!(row && row.claim) }, '-',
     it('reply'), it('replyall'), it('forward'), '-',
     row && row.is_read ? it('unread') : it('read'),
@@ -1086,6 +1090,7 @@ function afterSelChange(id, keepAnchor) {
 }
 function pruneSel() {
   if (!S.multi.size) return;
+  if (isMob()) { const have = new Set((S.mails || []).map(m => m.id)); for (const id of [...S.multi]) if (!have.has(id)) S.multi.delete(id); return; }
   const have = new Set([...(S.mails || []).map(m => m.id), ...(S.older ? S.older.mails.map(m => m.id) : [])]);
   for (const id of [...S.multi]) if (!have.has(id)) S.multi.delete(id);
   if (S.multi.size < 2) { const only = [...S.multi][0]; S.multi.clear(); if (only && only !== S.sel) { S.sel = only; } }
@@ -1221,9 +1226,15 @@ function flushNotes() {
     if (n.desktop && 'Notification' in window && Notification.permission === 'granted') {
       try {
         const one = list[0];
-        const nt = new Notification(list.length === 1 ? (one.from || 'Nieuwe mail') : `${list.length} nieuwe mails`, {
-          body: list.length === 1 ? `${one.subject}\n${one.mailbox}` : list.slice(0, 4).map(x => `${x.from}: ${x.subject}`).join('\n'), tag: 'plakzicht-mail', silent: true });
-        nt.onclick = () => { window.focus(); openFromNote(one); nt.close(); };
+        const title = list.length === 1 ? (one.from || 'Nieuwe mail') : `${list.length} nieuwe mails`;
+        const opts = { body: list.length === 1 ? `${one.subject}\n${one.mailbox}` : list.slice(0, 4).map(x => `${x.from}: ${x.subject}`).join('\n'),
+          tag: 'plakzicht-mail', silent: true, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: one };
+        try {
+          const nt = new Notification(title, opts);
+          nt.onclick = () => { window.focus(); openFromNote(one); nt.close(); };
+        } catch {  // telefoons (Android, iPhone als app): alleen via de service worker
+          if (navigator.serviceWorker) navigator.serviceWorker.getRegistration().then(reg => reg && reg.showNotification(title, opts)).catch(() => {});
+        }
       } catch { /* niet beschikbaar in dit venster */ }
     }
   }
@@ -1313,17 +1324,21 @@ const parseLocal = s => { const [d, t = '00:00'] = s.split('T'); const [y, m, dd
 const dayStart = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const sameDay = (a, b) => a.toDateString() === b.toDateString();
+// Op de telefoon: alleen Lijst en Dag (week en maand zijn te breed); de keuze op de computer blijft bewaard.
+const calView = () => isMob() && !['list', 'day'].includes(CAL.view) ? 'list' : CAL.view;
 function calRange() {
-  const d = dayStart(CAL.date);
-  if (CAL.view === 'day') return [d, addDays(d, 1)];
-  if (CAL.view === 'month') { const f = new Date(d.getFullYear(), d.getMonth(), 1); const s = addDays(f, -((f.getDay() + 6) % 7)); return [s, addDays(s, 42)]; }
+  const d = dayStart(CAL.date), view = calView();
+  if (view === 'day') return [d, addDays(d, 1)];
+  if (view === 'list') return [d, addDays(d, 14)];
+  if (view === 'month') { const f = new Date(d.getFullYear(), d.getMonth(), 1); const s = addDays(f, -((f.getDay() + 6) % 7)); return [s, addDays(s, 42)]; }
   const mon = addDays(d, -((d.getDay() + 6) % 7));
-  return [mon, addDays(mon, CAL.view === 'workweek' ? 5 : 7)];
+  return [mon, addDays(mon, view === 'workweek' ? 5 : 7)];
 }
 function calTitle() {
   const [s, e] = calRange(), last = addDays(e, -1);
-  if (CAL.view === 'month') return MONTHS_NL[CAL.date.getMonth()] + ' ' + CAL.date.getFullYear();
-  if (CAL.view === 'day') return DAYS_NL[s.getDay()] + ' ' + s.getDate() + ' ' + MONTHS_NL[s.getMonth()] + ' ' + s.getFullYear();
+  if (calView() === 'month') return MONTHS_NL[CAL.date.getMonth()] + ' ' + CAL.date.getFullYear();
+  if (calView() === 'list') return 'vanaf ' + s.getDate() + ' ' + MONTHS_NL[s.getMonth()];
+  if (calView() === 'day') return DAYS_NL[s.getDay()] + ' ' + s.getDate() + ' ' + MONTHS_NL[s.getMonth()] + ' ' + s.getFullYear();
   return s.getDate() + (s.getMonth() !== last.getMonth() ? ' ' + MONTHS_NL[s.getMonth()] : '') + ' – ' + last.getDate() + ' ' + MONTHS_NL[last.getMonth()] + ' ' + last.getFullYear();
 }
 const calColor = id => ((CAL.info && CAL.info.calendars.find(c => c.id === id)) || {}).color || '#1f6fb2';
@@ -1392,15 +1407,32 @@ function layoutDay(evs) {
   return out;
 }
 function renderCalMain() {
-  const [s, e] = calRange(), today = new Date();
-  const views = [['day', 'Dag'], ['workweek', 'Werkweek'], ['week', 'Week'], ['month', 'Maand']];
+  const [s, e] = calRange(), today = new Date(), view = calView();
+  const views = isMob() ? [['list', 'Lijst'], ['day', 'Dag']] : [['list', 'Lijst'], ['day', 'Dag'], ['workweek', 'Werkweek'], ['week', 'Week'], ['month', 'Maand']];
   let h = `<div class="cal-head"><button class="btn" id="cal-today">Vandaag</button><button class="iconbtn" id="cal-prev" aria-label="Vorige">‹</button><button class="iconbtn" id="cal-next" aria-label="Volgende">›</button>
     <h1>${esc(calTitle())}</h1>${CAL.loading ? '<span class="spin"></span>' : ''}<span class="grow"></span>
-    <div class="seg">${views.map(([k, n]) => `<button class="${CAL.view === k ? 'on' : ''}" data-view="${k}">${n}</button>`).join('')}</div>
-    <button class="btn" id="cal-back">${ICON.mail} Naar mail</button></div>
+    <div class="seg">${views.map(([k, n]) => `<button class="${view === k ? 'on' : ''}" data-view="${k}">${n}</button>`).join('')}</div>
+    <button class="btn primary" id="cal-add" title="Nieuwe afspraak">${ICON.plus}<span>Afspraak</span></button>
+    <button class="btn" id="cal-back">${ICON.mail}<span> Naar mail</span></button></div>
     ${CAL.errors.length ? `<div class="callout small">${CAL.errors.map(esc).join('<br>')}</div>` : ''}`;
   const evs = CAL.events, ords = CAL.orders;
-  if (CAL.view === 'month') {
+  if (view === 'list') {
+    let any = false;
+    h += '<div class="agl">';
+    for (let d = new Date(s); d < e; d = addDays(d, 1)) {
+      const d2 = addDays(d, 1), dk = isoLocal(d).slice(0, 10);
+      const list = evs.filter(x => parseLocal(x.start) < d2 && parseLocal(x.end) > d).sort((a, b) => (b.allday - a.allday) || a.start.localeCompare(b.start));
+      const ol = ords.filter(o => o.due === dk);
+      if (!list.length && !ol.length && !sameDay(d, today)) continue;
+      any = true;
+      h += `<div class="agday ${sameDay(d, today) ? 'today' : ''}"><button class="agh" data-gotoday="${dk}">${sameDay(d, today) ? 'Vandaag · ' : sameDay(d, addDays(today, 1)) ? 'Morgen · ' : ''}${DAYS_NL[d.getDay()]} ${d.getDate()} ${MONTHS_NL[d.getMonth()]}</button>
+        ${ol.map(orderChip).join('')}
+        ${list.map(x => `<button class="agev" data-ev="${esc(x.id)}" style="--c:${calColor(x.cal)}"><span class="agt">${x.allday ? 'hele dag' : esc(x.start.slice(11, 16)) + '–' + esc(x.end.slice(11, 16))}</span>
+          <span class="ags"><b>${esc(x.subject)}</b>${x.location ? `<span class="note">${esc(x.location)}</span>` : ''}</span></button>`).join('')}
+        ${!list.length && !ol.length ? '<div class="note">Geen afspraken</div>' : ''}</div>`;
+    }
+    h += any ? '</div>' : '<div class="empty">Geen afspraken in deze twee weken.</div></div>';
+  } else if (view === 'month') {
     h += `<div class="month"><div class="mrowh">${['maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag', 'zondag'].map(x => `<span>${x}</span>`).join('')}</div><div class="mgrid">`;
     for (let i = 0; i < 42; i++) {
       const d = addDays(s, i), d2 = addDays(d, 1), dk = isoLocal(d).slice(0, 10);
@@ -1430,7 +1462,8 @@ function renderCalMain() {
   $('#cal-main').innerHTML = h;
   if ($('#wk-body')) $('#wk-body').scrollTop = keep ?? 7 * HOUR;
   $('#cal-today').onclick = () => { CAL.date = new Date(); renderCalSide(); loadCal(); };
-  const step = n => { const d = CAL.date; CAL.date = CAL.view === 'month' ? new Date(d.getFullYear(), d.getMonth() + n, 1) : addDays(d, n * (CAL.view === 'day' ? 1 : 7)); renderCalSide(); loadCal(); };
+  const step = n => { const d = CAL.date; CAL.date = view === 'month' ? new Date(d.getFullYear(), d.getMonth() + n, 1) : addDays(d, n * (view === 'day' ? 1 : view === 'list' ? 14 : 7)); renderCalSide(); loadCal(); };
+  $('#cal-add').onclick = () => { const d = dayStart(view === 'day' ? CAL.date : new Date()); d.setHours(Math.max(9, new Date().getHours() + 1)); if (!sameDay(d, CAL.date) && view === 'day') d.setHours(9); calEdit({ start: isoLocal(d), end: isoLocal(new Date(+d + 3600000)) }); };
   $('#cal-prev').onclick = () => step(-1); $('#cal-next').onclick = () => step(1);
   $('#cal-back').onclick = () => closeOverlay();
   $$('#cal-main [data-view]').forEach(b => b.onclick = () => { CAL.view = b.dataset.view; calSave(); renderCalSide(); loadCal(); });
@@ -1789,7 +1822,7 @@ function colsNeeded(cols) { return cols.reduce((t, k) => t + (k === 'subj' ? COL
 
 function listMode() {
   const cols = P().cols && P().cols.length ? P().cols : DEFAULT_COLS;
-  if (P().listview !== 'kolommen') return { mode: 'compact', cols };
+  if (P().listview !== 'kolommen' || isMob()) return { mode: 'compact', cols };
   const w = $('#list').clientWidth;
   return { mode: w && w < colsNeeded(cols) ? 'compact' : 'kolommen', narrow: w && w < colsNeeded(cols), cols };
 }
@@ -1811,7 +1844,7 @@ function renderList() {
   const sortBtn = `<button class="sortbtn" id="btn-sort" title="Sorteren en groeperen">${esc(SORT_NAMES[so.key] || so.key)} ${so.dir === 'asc' ? '↑' : '↓'}</button>`;
   let h = `<div class="listhead"><h1>${listTitle()} <small>${S.mails.length} ${S.mails.length === 1 ? 'mail' : 'mails'}</small>${syncNote}
     <span class="lh-right">${mode === 'compact' ? sortBtn : ''}<button class="iconbtn sm" id="btn-refresh" title="Vernieuwen" aria-label="Vernieuwen">${ICON.refresh}</button></span></h1>
-    <div class="filters">${filterPills()}${narrow ? '<button class="linkish narrowhint" id="btn-widen" title="De kolommen passen niet in deze breedte; daarom de compacte weergave">Kolommen passen niet: lijst breder maken</button>' : ''}</div></div>`;
+    <div class="filters">${filterPills()}${narrow && !isTouchUI() ? '<button class="linkish narrowhint" id="btn-widen" title="De kolommen passen niet in deze breedte; daarom de compacte weergave">Kolommen passen niet: lijst breder maken</button>' : ''}</div></div>`;
   if (mode === 'kolommen') {
     h += `<div class="chdr" role="row" style="--cols:${colsTemplate(cols)}"><div class="ch ic"><button class="selbox ${S.multi.size && S.multi.size === S.mails.length ? 'on' : S.multi.size ? 'part' : ''}" id="btn-selall" role="checkbox" aria-checked="${S.multi.size ? 'true' : 'false'}" title="Alles selecteren (Ctrl+A)" aria-label="Alles selecteren">${ICON.check}</button></div>${cols.map(k => {
       const d = COLDEF[k], sk = colSortKey(k), on = so.key === sk;
@@ -1822,7 +1855,7 @@ function renderList() {
   if (!S.mails.length && !S.older) h += `<div class="empty">${S.search ? 'Niets gevonden voor “' + esc(S.search) + '”.' : S.filter !== 'alle' ? 'Geen mails met dit filter.' : 'Geen mails in deze map.'}</div>`;
   const mbv = S.view && S.view.mailbox_id ? mailboxById(S.view.mailbox_id) : null;
   const canOlder = isMs() && mbv && fv && fv.synced && (mbv.cache_days || 0) > 0;
-  const sorted = sortMails(S.mails);
+  const sorted = sortMails(S.mails.filter(m => !PENDING.has(m.id)));
   S.shown = [];
   let grp = null, gcount = {};
   if (groups) for (const m of sorted) { const g = groupOf(m, so.key); gcount[g] = (gcount[g] || 0) + 1; }
@@ -1904,14 +1937,16 @@ function renderList() {
     if (r._wired) return; r._wired = true;
     const id = r.dataset.id;
     r.onclick = e => {
+      if (r._sw || r._lp) { r._lp = false; return; }  // was vegen of lang drukken
       if (e.target.closest('.selbox')) return;
+      if (isMob() && S.multi.size) return mobSel(id);
       if (e.ctrlKey || e.metaKey) return selToggle(id);
       if (e.shiftKey && (S.sel || S.anchor)) return selRange(id);
       if (S.multi.size) selClear(false);
       S.anchor = id; openMail(id);
     };
     r.ondblclick = e => { if (!e.ctrlKey && !e.shiftKey && !e.target.closest('.selbox')) popoutMail(id); };
-    r.oncontextmenu = e => { e.preventDefault(); $$('#list .mrow.ctx').forEach(x => x.classList.remove('ctx')); r.classList.add('ctx'); showMenu(e.clientX, e.clientY, mailMenu(id)); };
+    r.oncontextmenu = e => { e.preventDefault(); if (isMob()) return; $$('#list .mrow.ctx').forEach(x => x.classList.remove('ctx')); r.classList.add('ctx'); showMenu(e.clientX, e.clientY, mailMenu(id)); };
     r.addEventListener('dragstart', e => {
       closeMenu();
       if (inBulk(id)) {
@@ -1922,7 +1957,9 @@ function renderList() {
       }
       e.dataTransfer.setData('text/plain', r.dataset.id); e.dataTransfer.effectAllowed = 'move'; r.classList.add('dragsrc'); document.body.classList.add('dragging'); });
     r.addEventListener('dragend', () => { $$('#list .mrow.dragsrc').forEach(x => x.classList.remove('dragsrc')); document.body.classList.remove('dragging'); });
+    wireTouchRow(r, id);
   });
+  renderMobBulk(); mobBar();
 }
 function setFilter(f) { S.filter = f; loadList(); renderRibbon(); }
 function sortMenu() {
@@ -1981,6 +2018,7 @@ async function openMail(id, quiet) {
   if (S.ai && S.ai.id !== id) S.ai = null;
   if (SPEAK.on && S.sel !== id) { speechSynthesis.cancel(); SPEAK.on = false; }
   S.sel = id;
+  if (!quiet && isMob()) setPane('read');
   if (!quiet && !S.popout && !S.multi.size) {  // direct laten zien dat de klik is aangekomen
     $$('#list .mrow.sel').forEach(r => r.classList.remove('sel'));
     const r = $(`#list .mrow[data-id="${CSS.escape(id)}"]`); if (r) r.classList.add('sel');
@@ -2007,6 +2045,8 @@ function collabBanner(m) {
   return parts.length ? `<div class="collab">${parts.join('')}</div>` : '';
 }
 function renderReader() {
+  if (isMob() && PANE === 'read' && !S.mail && !(S.cmp && !S.cmp.full)) mobBack();  // mail is weg (gearchiveerd, verplaatst)
+  mobPzBar();
   if (S.multi.size > 1) return bulkReader();
   if (S.cmp && !S.cmp.full && (!S.cmp.refId || S.cmp.refId === S.sel)) { renderComposePane(); renderRibbon(); return; }
   const m = S.mail;
@@ -2019,10 +2059,10 @@ function renderReader() {
   }
   const row = rowOf(m.id) || m;
   const html = `
-    <div class="rbar" role="toolbar" aria-label="Snelle acties">${smallBtn('reply')}${smallBtn('replyall', 'Allen')}${smallBtn('forward')}
+    <div class="rbar" role="toolbar" aria-label="Snelle acties">${smallBtn('reply')}${smallBtn('replyall', 'Allen')}${smallBtn('forward')}${isTouchUI() ? smallBtn('archive') + smallBtn('delete') : ''}
       <span class="grow"></span>
-      ${S.layout && S.layout.pz_hidden ? `<button class="sbtn" data-act="showpz" style="--ac:var(--a-link)">${ICON.panel}<span>Plakzicht</span></button>` : ''}
-      ${S.popout ? '' : `<button class="sbtn ic" data-act="popout" title="Eigen venster (Enter)" aria-label="Eigen venster">${ICON.popout}</button>`}
+      ${S.layout && S.layout.pz_hidden && !isTouchUI() ? `<button class="sbtn" data-act="showpz" style="--ac:var(--a-link)">${ICON.panel}<span>Plakzicht</span></button>` : ''}
+      ${S.popout || isTouchUI() ? '' : `<button class="sbtn ic" data-act="popout" title="Eigen venster (Enter)" aria-label="Eigen venster">${ICON.popout}</button>`}
       <button class="sbtn ic" data-act="more" title="Meer acties" aria-label="Meer acties">${ICON.dots}</button></div>
     <div class="rhead">
       <h1>${row.importance === 'high' ? '<span class="imp hi" title="Urgentie: hoog">!</span> ' : ''}${row.flagged ? `<span class="hflag" title="Met vlag">${ICON.flag}</span>` : ''}${esc(m.subject || '(geen onderwerp)')}</h1>
@@ -2049,7 +2089,7 @@ function renderReader() {
   $$('#reader [data-act]').forEach(b => b.onclick = () => {
     const a = b.dataset.act;
     if (a === 'showpz') { setLayout({ pz_hidden: false }); renderReader(); return; }
-    if (a === 'more') { const r = b.getBoundingClientRect(); showMenu(r.right - 240, r.bottom + 4, mailMenu(m.id)); return; }
+    if (a === 'more') { const r = b.getBoundingClientRect(); showMenu(r.right - 240, r.bottom + 4, [...mailMenu(m.id), ...(isTouchUI() ? ['-', ...claudeMenuForMobile()] : [])]); return; }
     doAct(a, m.id);
   });
   $$('#reader [data-unlabel]').forEach(b => b.onclick = () => doAct('labelset', m.id, { label: +b.dataset.unlabel, on: false }));
@@ -2097,7 +2137,7 @@ async function openCompose(o) {
   if (S.cmp) stashCompose();
   if (refId && DRAFTS[refId]) { S.cmp = { ...DRAFTS[refId] }; toast('Je concept voor deze mail is weer geopend'); }
   else S.cmp = buildCompose(o);
-  if (o.full || P().reply_in === 'window') S.cmp.full = true;
+  if ((o.full || P().reply_in === 'window') && !isMob()) S.cmp.full = true;
   if (refId) {
     setPresence(refId, 'antwoordt');
     if (!S.cmp.full && S.sel !== refId) { S.sel = refId; S.mail = m; if (!S.popout) renderList(); renderPz(); }
@@ -2138,7 +2178,7 @@ function composeHtml(c) {
       <span class="grow"></span>
       <button class="btn" data-c="ai" ${cl.ok ? '' : 'disabled'} title="${esc(cl.ok ? 'Claude: antwoord schrijven, tekst verbeteren of vertalen' : cl.why)}">${ICON.sparkle} Claude ▾</button>
       <button class="btn" data-c="insert" id="c-insert" title="Ordergegevens uit Plakzicht in de mail zetten">${ICON.link} Ordergegevens</button>
-      ${S.popout ? '' : c.full ? `<button class="btn" data-c="pane" title="Terug naar het leesvenster">Naar leesvenster</button>` : `<button class="btn" data-c="full" title="Volledig scherm">${ICON.popout} Uitklappen</button>`}
+      ${S.popout || isMob() ? '' : c.full ? `<button class="btn" data-c="pane" title="Terug naar het leesvenster">Naar leesvenster</button>` : `<button class="btn" data-c="full" title="Volledig scherm">${ICON.popout} Uitklappen</button>`}
       <button class="iconbtn" data-c="close" title="Sluiten; het concept blijft bewaard" aria-label="Sluiten, concept bewaren">×</button>
     </div>
     ${c.others && c.others.length ? `<div class="callout cwarn"><b>Let op:</b> ${c.others.map(esc).join('; ')}.</div>` : ''}
@@ -2169,6 +2209,7 @@ function showCompose() {
     return;
   }
   if (!$('#overlay').hidden && $('#overlay .cmp')) closeOverlay();
+  if (isMob()) setPane('read');
   renderReader();
 }
 function renderComposePane() {
@@ -2491,7 +2532,8 @@ function renderPz() {
     h += `<div class="panel"><h2>Klant</h2><p class="note">${esc(m.folder_wk === 'sent' ? m.to_addr : m.from_addr)} is nog geen klant in Plakzicht.</p></div>`;
   }
   setHtml($('#pz'), h);
-  $('#pz-hide').onclick = () => { setLayout({ pz_hidden: true }); renderReader(); };
+  $('#pz-hide').onclick = () => { if (isTouchUI()) { document.body.classList.remove('pzopen'); mobPzBar(); return; } setLayout({ pz_hidden: true }); renderReader(); };
+  mobPzBar();
   $$('#pz [data-open]').forEach(b => b.onclick = () => openOrder(b.dataset.open));
   $$('#pz [data-ext]').forEach(b => b.onclick = e => { e.preventDefault(); openExternal(b.dataset.ext); });
   $$('#pz [data-link]').forEach(b => b.onclick = () => linkDialog(m));
@@ -2830,14 +2872,14 @@ let mySec = 'view';
 async function openMySettings(editId, section) {
   if (section) mySec = section;
   await run(async () => { await refreshState(); });
-  const secs = [['view', 'Weergave'], ['notify', 'Meldingen'], ['qs', 'Snelle stappen'], ['claude', 'Claude'], ['sig', 'Handtekeningen'], ['pw', 'Wachtwoord'], ['dev', 'Apparaten']];
+  const secs = [['view', 'Weergave'], ['notify', 'Meldingen'], ['qs', 'Snelle stappen'], ['claude', 'Claude'], ['sig', 'Handtekeningen'], ['pw', 'Wachtwoord'], ['dev', 'Apparaten'], ['mob', 'Mobiel']];
   const ov = $('#overlay');
   ov.innerHTML = `<div class="ohead"><button class="btn" data-close>← Terug naar mail</button><h1>Mijn instellingen</h1><span class="note">${esc(S.st.user.name)} · ${esc(S.st.user.username)}</span></div>
     <div class="tabs">${secs.map(([k, n]) => `<button class="pill ${mySec === k ? 'on' : ''}" data-sec="${k}">${n}</button>`).join('')}</div><div id="mybody"></div>`;
   ov.hidden = false;
   $('[data-close]', ov).onclick = () => { closeOverlay(); renderList(); renderRibbon(); };
   $$('[data-sec]', ov).forEach(b => b.onclick = () => openMySettings(undefined, b.dataset.sec));
-  ({ view: myView, notify: myNotify, qs: myQuicksteps, claude: myClaude, sig: () => mySigs(editId), pw: myPw, dev: myDevices })[mySec](editId);
+  ({ view: myView, notify: myNotify, qs: myQuicksteps, claude: myClaude, sig: () => mySigs(editId), pw: myPw, dev: myDevices, mob: myMobile })[mySec](editId);
 }
 function myView() {
   const p = P();
@@ -3325,6 +3367,253 @@ window.addEventListener('focus', () => {
   focusT = setTimeout(go, 800);  // eerst je klik laten afhandelen
 });
 
+// ------------------------------------------------------------ telefoon en tablet
+// Telefoon (≤ 760 px): één scherm tegelijk (lijst of mail), mappen als schuifmenu, vegen en lang drukken.
+// Tablet (761–1100 px): lijst en mail naast elkaar, mappen als schuifmenu, Plakzicht als uitklapbare balk.
+const MQ = { mob: matchMedia('(max-width: 760px)'), tab: matchMedia('(min-width: 761px) and (max-width: 1100px)') };
+const isMob = () => MQ.mob.matches && !S.popout, isTab = () => MQ.tab.matches && !S.popout, isTouchUI = () => isMob() || isTab();
+let PANE = 'list';
+ICON.menu = svg('<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>');
+ICON.back = svg('<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>');
+function applyDevice() {
+  document.body.classList.toggle('mob', isMob());
+  document.body.classList.toggle('tab', isTab());
+  document.body.dataset.pane = isMob() ? PANE : '';
+  if (!isTouchUI()) { closeDrawer(); document.body.classList.remove('pzopen', 'msearch'); }
+  mobBar(); mobPzBar(); renderMobBulk();
+}
+for (const q of [MQ.mob, MQ.tab]) q.addEventListener('change', () => { applyDevice(); if (S.st && !S.popout) { renderList(); renderReader(); renderRibbon(); } });
+function setPane(p) {
+  if (p === PANE) return;
+  if (isMob() && p === 'read' && !(history.state && history.state.pm)) history.pushState({ pm: 'read' }, '');
+  PANE = p; document.body.dataset.pane = isMob() ? p : '';
+  if (p === 'list') document.body.classList.remove('pzopen');
+  mobBar(); mobPzBar();
+}
+function mobBack() {
+  if (history.state && history.state.pm) { history.back(); return; }  // de echte stap volgt in popstate
+  leaveRead();
+}
+function leaveRead() {
+  if (S.cmp && !S.cmp.full) { stashCompose(); }
+  setPane('list');
+  $('#list').focus({ preventScroll: true });
+}
+window.addEventListener('popstate', () => { if (isMob() && PANE === 'read') leaveRead(); });
+function mobTitle() { const t = document.createElement('div'); t.innerHTML = S.st ? listTitle() : ''; return t.textContent.trim(); }
+function mobBar() {
+  if (!$('#m-menu')) return;
+  const back = isMob() && PANE === 'read';
+  $('#m-menu').innerHTML = back ? ICON.back : ICON.menu;
+  $('#m-menu').setAttribute('aria-label', back ? 'Terug naar de lijst' : 'Mappen en labels');
+  $('#m-title').textContent = back ? '' : mobTitle();
+  $('#m-search').innerHTML = ICON.search;
+  $('#m-me').textContent = S.st ? initials(S.st.user.name) : '';
+  $('#fab').innerHTML = ICON.pen + '<span>Nieuwe mail</span>';
+  $('#fab').hidden = !isMob() || !S.st || PANE !== 'list' || S.multi.size > 0;
+}
+function openDrawer() { document.body.classList.add('drawer'); }
+function closeDrawer() { document.body.classList.remove('drawer'); }
+$('#m-menu').onclick = () => { if (isMob() && PANE === 'read') return mobBack(); document.body.classList.contains('drawer') ? closeDrawer() : openDrawer(); };
+$('#scrim').onclick = () => { closeDrawer(); document.body.classList.remove('pzopen'); };
+$('#side').addEventListener('click', e => {  // map of label gekozen: menu dicht
+  if (!document.body.classList.contains('drawer')) return;
+  const b = e.target.closest('[data-mb], [data-label], #btn-new, #btn-rules');
+  if (b && !b.matches('[data-twmb], [data-twf], [data-newf]')) setTimeout(closeDrawer, 60);
+});
+$('#m-search').onclick = () => {
+  const on = !document.body.classList.contains('msearch');
+  document.body.classList.toggle('msearch', on);
+  if (on) $('#search').focus(); else if ($('#search').value) { $('#search').value = ''; S.search = ''; loadList(); }
+};
+$('#fab').onclick = () => openCompose({ mode: 'new' });
+$('#m-me').onclick = () => {
+  const r = $('#m-me').getBoundingClientRect(), on = N().on;
+  showMenu(r.right - 240, r.bottom + 4, [
+    { head: S.st.user.name },
+    { n: 'Agenda', icon: ICON.calendar, run: () => $('#nav-cal').click() },
+    { n: 'Order of offerte zoeken', icon: ICON.search, run: () => $('#nav-orders').click() },
+    { n: 'Regels', icon: ICON.rules, run: () => $('#nav-rules').click() },
+    ...(S.st.user.role === 'beheerder' ? [{ n: 'Beheer', icon: ICON.shield, run: () => $('#btn-admin').click() }] : []),
+    { n: 'Mijn instellingen', icon: ICON.pen, run: () => openMySettings() },
+    { n: on ? 'Meldingen uitzetten' : 'Meldingen aanzetten', icon: on ? ICON.bellOff : ICON.bell, run: () => toggleNotify() },
+    '-', { n: 'Uitloggen', icon: ICON.ban, run: () => $('#btn-logout').click() }]);
+};
+
+// Plakzicht als balk boven de mail (telefoon en tablet); tik = uitklappen
+function mobPzBar() {
+  const bar = $('#pzbar'); if (!bar) return;
+  const m = S.mail, show = isTouchUI() && !!m && !S.multi.size && !(S.cmp && !S.cmp.full) && (!isMob() || PANE === 'read');
+  bar.hidden = !show;
+  if (!show) { document.body.classList.remove('pzopen'); return; }
+  const pz = m.plakzicht || {};
+  let t = 'Plakzicht: geen order of offerte', cls = 'none';
+  if (pz.pending) { t = 'Plakzicht: gegevens ophalen…'; cls = ''; }
+  else if (pz.order) { t = `Order #${pz.order.nr}${pz.order.status ? ' · ' + pz.order.status : ''}${pz.order.due ? ' · verzenden ' + fmtDay(pz.order.due) : ''}`; cls = 'has'; }
+  else if (pz.offerte) { t = `${pz.live ? 'Offerte ' : ''}${pz.offerte.nr}${pz.offerte.status ? ' · ' + pz.offerte.status : ''}`; cls = 'has'; }
+  else if (pz.klant) { t = 'Klant: ' + (pz.klant.naam || pz.klant.name || m.from_name || ''); cls = 'has'; }
+  const open = document.body.classList.contains('pzopen');
+  bar.className = 'pzbar-m ' + cls;
+  bar.innerHTML = `${ICON.panel}<span class="ell">${esc(t)}</span><span class="chev">${open ? '▴' : '▾'}</span>`;
+  bar.setAttribute('aria-expanded', String(open));
+}
+$('#pzbar').onclick = () => { document.body.classList.toggle('pzopen'); mobPzBar(); };
+
+// Selecteren op de telefoon: lang drukken, daarna tikken om toe te voegen of weg te halen
+function mobSel(id) {
+  id = String(id);
+  if (S.multi.has(id)) S.multi.delete(id); else S.multi.add(id);
+  if (navigator.vibrate) try { navigator.vibrate(12); } catch { /* */ }
+  renderList(); mobBar();
+}
+function renderMobBulk() {
+  const bar = $('#mbulk'); if (!bar) return;
+  const show = isMob() && S.multi.size > 0 && PANE === 'list';
+  bar.hidden = !show;
+  if (!show) return;
+  const rows = [...S.multi].map(rowOf).filter(Boolean);
+  bar.innerHTML = `<div class="mb-top"><button class="mbtn" data-mb-act="clear" aria-label="Selectie opheffen">${svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>')}</button><b>${S.multi.size} geselecteerd</b>
+      <button class="linkish" data-mb-act="all">Alles</button></div>
+    <div class="mb-btns">${[['archive', 'Archiveren'], ['delete', 'Verwijderen'], ['move', 'Verplaatsen'], ['label', 'Label'], ['claim', 'Toewijzen'], ['read', rows.some(r => !r.is_read) ? 'Gelezen' : 'Ongelezen'], ['flag', 'Vlag']]
+      .map(([a, n]) => `<button data-mb-act="${a}" style="--ac:var(--a-${a === 'claim' ? 'claim' : ACT[a].c})">${ICON[ACT[a].i]}<span>${n}</span></button>`).join('')}</div>`;
+  $$('[data-mb-act]', bar).forEach(b => b.onclick = async () => {
+    const a = b.dataset.mbAct, ids = [...S.multi], r = b.getBoundingClientRect();
+    if (a === 'clear') { S.multi.clear(); renderList(); mobBar(); return; }
+    if (a === 'all') { S.multi = new Set(S.shown || []); renderList(); return; }
+    if (ids.length === 1) {  // één mail: gewone acties
+      const id = ids[0];
+      if (a === 'move') return showMenu(r.left, r.top, moveItems(id, true));
+      if (a === 'label') return showMenu(r.left, r.top, labelItems(id));
+      if (a === 'claim') return showMenu(r.left, r.top, await assignItems(id));
+      S.multi.clear();
+      return doAct(a === 'read' ? (rowOf(id) && !rowOf(id).is_read ? 'read' : 'unread') : a, id);
+    }
+    if (a === 'move') return showMenu(r.left, r.top, moveItems(ids[0], true));
+    if (a === 'label') return showMenu(r.left, r.top, bulkLabelItems());
+    if (a === 'claim') return showMenu(r.left, r.top, await assignItems(ids[0]));
+    if (a === 'read') return bulkAct(rows.some(x => !x.is_read) ? 'read' : 'unread', ids);
+    bulkAct(a, ids);
+  });
+}
+
+// Vegen over een mail in de lijst; wat het doet kies je in Mijn instellingen › Mobiel
+const SWIPE = {
+  none: { n: 'Niets' },
+  archive: { n: 'Archiveren', i: 'archive', c: 'archive', gone: true },
+  delete: { n: 'Verwijderen', i: 'trash', c: 'del', gone: true },
+  read: { n: 'Gelezen / ongelezen', i: 'mailOpen', c: 'read' },
+  flag: { n: 'Vlag aan / uit', i: 'flag', c: 'flag' },
+  reply: { n: 'Beantwoorden', i: 'reply', c: 'reply' },
+  claim: { n: 'Oppakken / vrijgeven', i: 'hand', c: 'claim' },
+  label: { n: 'Label kiezen…', i: 'tag', c: 'label' },
+  move: { n: 'Verplaatsen naar…', i: 'folder', c: 'move' },
+};
+const swipeOf = dx => { const sw = P().swipe || {}; const k = dx < 0 ? sw.left : sw.right; return SWIPE[k] && k !== 'none' ? k : null; };
+const PENDING = new Map();  // id -> {a, t}: archiveren/verwijderen na 'ongedaan maken'-tijd
+function flushPending() { for (const [id, p] of [...PENDING]) { clearTimeout(p.t); PENDING.delete(id); doAct(p.a, id); } }
+document.addEventListener('visibilitychange', () => { if (document.hidden) flushPending(); });
+window.addEventListener('pagehide', flushPending);
+function toastUndo(msg, onUndo, ms = 5000) {
+  const t = $('#toast');
+  t.innerHTML = `<span>${esc(msg)}</span><button class="undo">Ongedaan maken</button>`; t.hidden = false;
+  clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, ms);
+  $('.undo', t).onclick = () => { clearTimeout(toastT); t.hidden = true; onUndo(); };
+}
+async function runSwipe(a, id) {
+  const row = rowOf(id); if (!row) return;
+  if (SWIPE[a].gone) {
+    if (a === 'archive' && row.folder_wk === 'archive') return toast('Deze mail staat al in Archief');
+    if (a === 'delete' && row.folder_wk === 'deleted') return doAct('delete', id);  // definitief: met vraag
+    const t = setTimeout(() => { PENDING.delete(id); doAct(a, id); }, 5000);
+    PENDING.set(id, { a, t }); renderList();
+    toastUndo(a === 'archive' ? 'Gearchiveerd' : 'Verwijderd', () => { const p = PENDING.get(id); if (p) clearTimeout(p.t); PENDING.delete(id); renderList(); });
+    return;
+  }
+  if (a === 'read') return doAct(row.is_read ? 'unread' : 'read', id);
+  if (a === 'claim') return doAct(row.claim && row.claim.mine ? 'unclaim' : 'claim', id);
+  if (a === 'label') return showMenu(0, innerHeight, labelItems(id));
+  if (a === 'move') return showMenu(0, innerHeight, moveItems(id, true));
+  doAct(a, id);
+}
+function wireTouchRow(r, id) {
+  let x0 = null, y0 = 0, dx = 0, on = false, pid = null, bg = null, lp = null;
+  const reset = (anim = true) => {
+    r.style.transition = anim ? 'transform .18s ease' : ''; r.style.transform = '';
+    if (bg) { const b = bg; setTimeout(() => b.remove(), anim ? 200 : 0); bg = null; }
+    on = false; x0 = null; pid = null;
+  };
+  r.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse' || !isTouchUI()) return;
+    x0 = e.clientX; y0 = e.clientY; dx = 0; on = false; pid = e.pointerId;
+    clearTimeout(lp);
+    if (isMob()) lp = setTimeout(() => { if (!on && x0 !== null) { r._lp = true; x0 = null; mobSel(id); } }, 480);
+  });
+  r.addEventListener('pointermove', e => {
+    if (pid !== e.pointerId || x0 === null) return;
+    const mx = e.clientX - x0, my = e.clientY - y0;
+    if (!on) {
+      if (Math.abs(mx) > 6 || Math.abs(my) > 6) clearTimeout(lp);
+      if (Math.abs(my) > 10 && Math.abs(my) > Math.abs(mx)) { x0 = null; return; }  // gewoon scrollen
+      if (Math.abs(mx) < 14 || S.multi.size || !(swipeOf(-1) || swipeOf(1))) return;
+      on = true; try { r.setPointerCapture(pid); } catch { /* */ }
+      const rr = r.getBoundingClientRect();
+      bg = document.createElement('div'); bg.className = 'swipebg';
+      Object.assign(bg.style, { top: rr.top + 'px', left: rr.left + 'px', width: rr.width + 'px', height: rr.height + 'px' });
+      document.body.appendChild(bg);
+    }
+    dx = mx;
+    const a = swipeOf(dx);
+    if (!a) dx = Math.max(-24, Math.min(24, dx));  // deze kant doet niets: alleen een klein beetje meegeven
+    r.style.transition = ''; r.style.transform = `translateX(${dx}px)`;
+    const go = a && Math.abs(dx) > r.offsetWidth * 0.3;
+    bg.className = `swipebg ${dx < 0 ? 'l' : 'r'} ${go ? 'go' : ''}`;
+    bg.style.setProperty('--ac', a ? `var(--a-${SWIPE[a].c})` : 'var(--muted)');
+    bg.innerHTML = a ? `<span>${ICON[SWIPE[a].i]}<b>${esc(SWIPE[a].n.replace('…', ''))}</b></span>` : '';
+  });
+  const end = e => {
+    clearTimeout(lp);
+    if (pid !== e.pointerId) return;
+    if (!on) { x0 = null; pid = null; return; }
+    r._sw = true; setTimeout(() => { r._sw = false; }, 350);  // de klik na het vegen niet als 'openen' tellen
+    const a = swipeOf(dx), go = e.type === 'pointerup' && a && Math.abs(dx) > r.offsetWidth * 0.3;
+    if (go && SWIPE[a].gone) {
+      r.style.transition = 'transform .18s ease'; r.style.transform = `translateX(${dx < 0 ? -110 : 110}%)`;
+      const b = bg; bg = null; on = false; x0 = null; pid = null;
+      setTimeout(() => { if (b) b.remove(); runSwipe(a, id); }, 170);
+      return;
+    }
+    reset();
+    if (go) runSwipe(a, id);
+  };
+  r.addEventListener('pointerup', end);
+  r.addEventListener('pointercancel', end);
+}
+
+function claudeMenuForMobile() {  // op telefoon/tablet is er geen lint: Claude zit in het ⋯-menu van de mail
+  const c = claudeState();
+  return c.ok ? [{ n: 'Claude', icon: ICON.sparkle, sub: claudeItems() }] : [];
+}
+
+// Mijn instellingen › Mobiel
+function myMobile() {
+  const sw = P().swipe || { left: 'archive', right: 'read' };
+  const opts = cur => Object.entries(SWIPE).map(([k, v]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${esc(v.n)}</option>`).join('');
+  $('#mybody').innerHTML = `<div class="grid2"><form class="panel form" id="mobform"><h2>Vegen in de maillijst <small>telefoon en tablet</small></h2>
+      <label>Naar links vegen<select name="left">${opts(sw.left)}</select></label>
+      <label>Naar rechts vegen<select name="right">${opts(sw.right)}</select></label>
+      <p class="note">Veeg een mail ver genoeg opzij (je ziet de kleur en het icoon), en laat los. Archiveren en verwijderen kun je daarna 5 seconden ongedaan maken. Lang drukken op een mail selecteert hem; tik daarna op andere mails om ze toe te voegen.</p>
+      <div class="swprev"><div class="swp l" style="--ac:var(--a-${(SWIPE[sw.left] || {}).c || 'link'})">← ${esc(SWIPE[sw.left] ? SWIPE[sw.left].n : 'Niets')}</div>
+        <div class="swp r" style="--ac:var(--a-${(SWIPE[sw.right] || {}).c || 'link'})">${esc(SWIPE[sw.right] ? SWIPE[sw.right].n : 'Niets')} →</div></div>
+    </form><div class="panel"><h2>Als app op je telefoon</h2>
+      <p class="note"><b>iPhone</b> (Safari): open <span class="mono">${esc(location.origin)}</span>, tik op <i>Deel</i> (vierkant met pijl) › <b>Zet op beginscherm</b>. Open Plakzicht Mail daarna via het icoon; alleen dan werken meldingen (iOS 16.4 of nieuwer).</p>
+      <p class="note"><b>Android</b> (Chrome): menu ⋮ › <b>App installeren</b> (of <i>Toevoegen aan startscherm</i>).</p>
+      <p class="note">Meldingen bij nieuwe mail komen zolang de app open is of nog maar kort op de achtergrond staat. ${window.isSecureContext ? '' : 'Via dit adres (geen https) kan de browser geen meldingen tonen en niet installeren; gebruik het internetadres (https).'}</p></div></div>`;
+  $$('#mobform select').forEach(sel => sel.onchange = () => { const f = new FormData($('#mobform')); savePrefs({ swipe: { left: f.get('left'), right: f.get('right') } }); myMobile(); });
+}
+
+if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', e => {  // tik op een melding (telefoon)
+  if (e.data && e.data.t === 'note' && e.data.mail) openFromNote(e.data.mail);
+});
 // Installeren als app (Chrome/Edge op Mac en Windows); alleen via https of localhost, en niet in de Windows-app.
 if ('serviceWorker' in navigator && window.isSecureContext && !window.pywebview && !new URLSearchParams(location.search).get('popout')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});

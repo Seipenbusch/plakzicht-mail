@@ -23,7 +23,11 @@ try:
         pg.on("pageerror", lambda e: errors.append(str(e)))
         pg.goto(srv.base + "/")
         pg.wait_for_selector("#login:not([hidden])")
+        pg.focus("[name=password]")  # meteen in het wachtwoordveld: de cursor mag niet terugspringen
         pg.wait_for_selector("#keepbox:not([hidden])")
+        pg.wait_for_timeout(300)
+        assert pg.evaluate("document.activeElement.name") == "password"
+        ok("inlogscherm: cursor springt niet terug als je al in het wachtwoordveld zit")
         assert pg.is_checked("#keepbox input") and "30 dagen" in pg.inner_text("#keepbox")
         ok("inlogscherm: vinkje 'Ingelogd blijven' staat standaard aan")
         pg.fill("[name=username]", "medewerker-a"); pg.fill("[name=password]", "demo"); pg.click("button[type=submit]")
