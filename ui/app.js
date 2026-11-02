@@ -2075,7 +2075,8 @@ async function openMail(id, quiet) {
   if (quiet && S.cmp && !S.cmp.full && S.cmp.refId !== id) {
     // automatisch verversen (terug in het venster, wijziging van een collega) terwijl je een mail schrijft:
     // het schrijfvenster blijft staan; alleen de gegevens op de achtergrond bijwerken
-    await run(async () => { const m = await api('get_mail', id); if (S.sel === id) { S.mail = m; S.mail.id = String(m.id); } });
+    await run(async () => { const m = await api('get_mail', id); if (S.sel === id) { S.mail = m; S.mail.id = String(m.id);
+      if (m.plakzicht && m.plakzicht.pending && PZCACHE.has(id)) { S.mail.plakzicht = PZCACHE.get(id); loadPz(id); } } });
     if (!S.popout) renderList();
     renderRibbon();
     return;
@@ -2093,6 +2094,7 @@ async function openMail(id, quiet) {
   else if (presKey !== id) setPresence(id, 'leest');
   await run(async () => {
     S.mail = await api('get_mail', id); S.mail.id = String(S.mail.id);
+    if (S.mail.plakzicht && S.mail.plakzicht.pending && PZCACHE.has(id)) { S.mail.plakzicht = PZCACHE.get(id); loadPz(id); }  // geen flits: bijwerken op de achtergrond
     const row = S.mails.find(m => m.id === id);
     if (row && !row.is_read) { row.is_read = 1; if (!S.popout) refreshState(); }
     if (S.popout) { document.title = (S.mail.subject || 'Mail') + ' - Plakzicht Mail'; S.mails = [{ ...S.mail }]; }
@@ -2551,9 +2553,15 @@ function renderPz() {
       $$('#pz-today [data-tev]').forEach(b => b.onclick = async () => { await openCalendar(); calShow(b.dataset.tev); }); });
     return;
   }
-  const pz = m.plakzicht;
+  let pz = m.plakzicht;
+  if (pz.pending) {
+    // De mail is opnieuw opgehaald (verversen); de Plakzicht-gegevens komen apart. Laat intussen de laatst bekende
+    // gegevens staan in plaats van steeds 'ophalen…' te tonen: dat gaf een flitsend paneel.
+    loadPz(m.id);
+    if (PZCACHE.has(m.id)) pz = PZCACHE.get(m.id);
+  }
   let h = `<div class="pzbar">Plakzicht${pz.live ? '' : ' <span class="badge" title="Nagebootste Plakzicht (demo)">demo</span>'}<button id="pz-hide" title="Paneel verbergen">Verbergen ×</button></div>`;
-  if (pz.pending) { setHtml($('#pz'), h + '<div class="panel"><div class="row"><span class="spin"></span><span class="note">Gegevens uit Plakzicht ophalen…</span></div></div>'); loadPz(m.id); return; }
+  if (pz.pending) { setHtml($('#pz'), h + '<div class="panel"><div class="row"><span class="spin"></span><span class="note">Gegevens uit Plakzicht ophalen…</span></div></div>'); return; }
   if (pz.error) h += `<div class="callout small">${esc(pz.error)}</div>`;
   const linkBtns = `<div class="row"><button class="btn small" data-link>Andere koppelen</button><button class="btn small" data-unlink>Ontkoppelen</button></div>`;
   if (pz.order) {
@@ -2606,9 +2614,14 @@ function renderPz() {
   $$('#pz [data-unlink]').forEach(b => b.onclick = () => run(async () => { await api('link_mail', m.id, ''); await openMail(m.id); await loadList(); toast('Ontkoppeld'); }));
 }
 const PZWAIT = new Set();
+const PZCACHE = new Map();  // mail-id -> laatst opgehaalde Plakzicht-gegevens
 async function loadPz(id) {
   if (PZWAIT.has(id)) return; PZWAIT.add(id);
-  try { const pz = await api('mail_plakzicht', id); if (S.mail && S.mail.id === id) { S.mail.plakzicht = pz; renderPz(); renderRibbon(); } }
+  try {
+    const pz = await api('mail_plakzicht', id);
+    PZCACHE.set(id, pz); if (PZCACHE.size > 300) PZCACHE.delete(PZCACHE.keys().next().value);
+    if (S.mail && S.mail.id === id) { S.mail.plakzicht = pz; renderPz(); renderRibbon(); }
+  }
   catch (e) { if (S.mail && S.mail.id === id) { S.mail.plakzicht = { error: e.message, missing: [], live: true }; renderPz(); } }
   finally { PZWAIT.delete(id); }
 }
@@ -3534,7 +3547,7 @@ function mobPzBar() {
   const m = S.mail, show = isTouchUI() && !!m && !S.multi.size && !(S.cmp && !S.cmp.full) && (!isMob() || PANE === 'read');
   bar.hidden = !show;
   if (!show) { document.body.classList.remove('pzopen'); return; }
-  const pz = m.plakzicht || {};
+  const pz = (m.plakzicht && m.plakzicht.pending && PZCACHE.get(m.id)) || m.plakzicht || {};
   let t = 'Plakzicht: geen order of offerte', cls = 'none';
   if (pz.pending) { t = 'Plakzicht: gegevens ophalen…'; cls = ''; }
   else if (pz.order) { t = `Order #${pz.order.nr}${pz.order.status ? ' · ' + pz.order.status : ''}${pz.order.due ? ' · verzenden ' + fmtDay(pz.order.due) : ''}`; cls = 'has'; }

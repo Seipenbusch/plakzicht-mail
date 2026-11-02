@@ -19,6 +19,7 @@ TESTS = [
     "test_interface",
     "test_mobiel",
     "test_weergave",
+    "test_plakzicht_paneel",
 ]
 
 
