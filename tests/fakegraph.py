@@ -1,6 +1,6 @@
 """Nagebootste Microsoft Graph voor tests (alleen wat Plakzicht Mail gebruikt).
 
-FG_PARTIAL=1: bij wijzigingen alleen id en isRead terugsturen (zoals Microsoft soms doet)."""
+FG_PARTIAL=1: bij wijzigingen alleen id en de wijzigbare velden terugsturen, zonder onderwerp of datum (zoals Microsoft soms doet)."""
 import json, os, re, sys, uuid, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -257,7 +257,8 @@ class H(BaseHTTPRequestHandler):
                 items = [clean(m) for m in b["msgs"].values() if m["parentFolderId"] == fid and m.get("_seq", 0) > t
                          and (t or (m.get("receivedDateTime") or "") >= since)]
                 if t and os.environ.get("FG_PARTIAL"):  # zoals Microsoft soms doet: alleen id en gewijzigde velden
-                    items = [{"id": x["id"], "isRead": x.get("isRead")} for x in items]
+                    items = [{"id": x["id"], "isRead": x.get("isRead"), "flag": x.get("flag"), "categories": x.get("categories", [])}
+                             for x in items]
                 if t:
                     items += [{"id": mid, "@removed": {"reason": "deleted"}} for s2, mid in TOMB.get((addr, fid), [])
                               if s2 > t and (mid not in b["msgs"] or b["msgs"][mid]["parentFolderId"] != fid)]
