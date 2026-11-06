@@ -111,7 +111,7 @@ jobs:
       - name: Programma's bouwen (PyInstaller)
         run: |
           "PLAKZICHT_VERSION = '$env:VERSION'" | Out-File -Encoding utf8 versie_build.py
-          pyinstaller --noconfirm --clean --windowed --name "Plakzicht Mail" --icon installer/icoon.ico werkplek/werkplek.py
+          pyinstaller --noconfirm --clean --windowed --name "Plakzicht Mail" --icon installer/icoon.ico --splash installer/splash.png werkplek/werkplek.py
           if ($LASTEXITCODE) { exit 1 }
           pyinstaller --noconfirm --clean --windowed --name "Plakzicht Mail server" --icon installer/icoon.ico `
             --add-data "ui;ui" --hidden-import versie_build app.py

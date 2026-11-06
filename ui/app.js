@@ -337,7 +337,7 @@ function renderSide() {
   let h;
   if (S.layout && S.layout.collapsed && !isTouchUI()) {
     h = `<div class="rail"><button class="ri" id="btn-collapse" title="Zijbalk uitklappen" aria-label="Zijbalk uitklappen">${ICON.expand}</button>
-      <button class="ri newmail" id="btn-new" title="Nieuwe mail" aria-label="Nieuwe mail">${ICON.pen}</button></div><div class="rail">`;
+      <button class="ri newmail" id="btn-new" title="Nieuwe mail" aria-label="Nieuwe mail">${ICON.pen}</button></div>${favHtml(v, true)}<div class="rail">`;
     for (const mb of S.st.mailboxes) {
       const inbox = mb.folders.find(f => f.wk === 'inbox') || {}, active = v.mailbox_id === mb.id;
       h += `<button class="ri ${active && v.folder === inbox.id ? 'on' : ''}" data-mb="${mb.id}" data-folder="${esc(inbox.id || '')}" data-drop="mb" title="${esc(mb.address)} › ${esc(inbox.name || 'Postvak IN')}${mb.error ? ' (fout)' : ''}" aria-label="${esc(mb.address)}">
@@ -358,7 +358,7 @@ function renderSide() {
   }
   h = `<div class="sidetop"><button class="btn primary big" id="btn-new">Nieuwe mail</button>
     <button class="iconbtn" id="btn-collapse" title="Zijbalk inklappen tot icoontjes" aria-label="Zijbalk inklappen">${ICON.collapse}</button></div>`;
-  h += `<div class="tree"><div class="sh">Mailboxen</div>`;
+  h += favHtml(v) + `<div class="tree"><div class="sh">Mailboxen</div>`;
   if (!S.st.mailboxes.length) h += `<p class="note" style="padding:0 6px">Je hebt nog geen toegang tot een mailbox. Vraag de beheerder.</p>`;
   for (const mb of S.st.mailboxes) {
     const open = isOpen('mb:' + mb.id, v.mailbox_id === mb.id), inbox = mb.folders.find(f => f.wk === 'inbox') || {};
@@ -387,7 +387,104 @@ function renderSide() {
   h += `</div><p class="note" style="padding:0 6px">Tip: sleep een mail naar een map om hem te verplaatsen, of naar een label. Rechtermuisknop op een map: submap maken, hernoemen, verplaatsen. Dubbelklik op een mail opent een eigen venster.</p>`;
   if (morph($('#side'), h)) wireSide();
 }
+// ------------------------------------------------------------ favorieten bovenin de zijbalk
+ICON.star = svg('<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9Z"/>');
+ICON.starOff = svg('<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9Z"/><path d="M3 3l18 18"/>');
+const FAVS = () => P().favorites || [];
+const favFolderKey = (mb, fid) => `f:${mb}:${fid}`;
+const isFav = k => FAVS().includes(k);
+function favResolve(k) {
+  if (k.startsWith('l:')) { const l = S.st.labels.find(x => x.id === +k.slice(2)); return l && { kind: 'label', label: l }; }
+  if (k.startsWith('m:')) {
+    const mb = mailboxById(+k.slice(2)); if (!mb) return null;
+    return { kind: 'mailbox', mb, f: mb.folders.find(f => f.wk === 'inbox') || null };
+  }
+  const rest = k.slice(2), i = rest.indexOf(':'), mb = mailboxById(+rest.slice(0, i));
+  const f = mb && mb.folders.find(x => x.id === rest.slice(i + 1));
+  return f ? { kind: 'folder', mb, f } : null;   // geen toegang meer of map weg: niet tonen
+}
+function toggleFav(k) {
+  const l = FAVS().slice(), i = l.indexOf(k);
+  if (i >= 0) l.splice(i, 1); else l.push(k);
+  savePrefs({ favorites: l, ...(i < 0 ? { fav_open: true } : {}) });
+  renderSide();
+  toast(i >= 0 ? 'Verwijderd uit favorieten' : 'Toegevoegd aan favorieten');
+}
+function moveFav(k, to) {  // to: index in de lijst van zichtbare favorieten, of 'up'/'down'
+  const l = FAVS().filter(x => favResolve(x)), i = l.indexOf(k);
+  if (i < 0) return;
+  let j = to === 'up' ? i - 1 : to === 'down' ? i + 1 : to;
+  j = Math.max(0, Math.min(l.length - 1, j));
+  if (j === i) return;
+  l.splice(i, 1); l.splice(j, 0, k);
+  savePrefs({ favorites: [...l, ...FAVS().filter(x => !l.includes(x))] });
+  renderSide();
+}
+const favItem = k => ({ n: isFav(k) ? 'Verwijderen uit favorieten' : 'Toevoegen aan favorieten', icon: isFav(k) ? ICON.starOff : ICON.star, run: () => toggleFav(k) });
+function favMenu(k) {
+  const r = favResolve(k); if (!r) return [favItem(k)];
+  const l = FAVS().filter(x => favResolve(x)), i = l.indexOf(k);
+  const base = r.kind === 'folder' ? folderMenu(r.mb.id, r.f.id).filter(x => !(x && x.n && /favorieten/.test(x.n)))
+    : r.kind === 'mailbox' ? mailboxMenu(r.mb.id).filter(x => !(x && x.n && /favorieten/.test(x.n))) : [];
+  return [...(isMob() ? [{ head: 'Favoriet: ' + (r.kind === 'label' ? r.label.name : r.kind === 'mailbox' ? r.mb.display : r.f.name) }] : []),
+    ...base.filter(x => !(x && x.head)), ...(base.length ? ['-'] : []),
+    { n: 'Omhoog', icon: svg('<path d="m18 15-6-6-6 6"/>'), disabled: i <= 0, run: () => moveFav(k, 'up') },
+    { n: 'Omlaag', icon: ICON.chevDown, disabled: i >= l.length - 1, run: () => moveFav(k, 'down') },
+    favItem(k)];
+}
+function labelMenu(id) {
+  const l = S.st.labels.find(x => x.id === id);
+  return [...(isMob() && l ? [{ head: 'Label ' + l.name }] : []),
+    { n: 'Openen', icon: ICON.tag, run: () => { S.view = { label_id: id }; S.sel = null; S.mail = null; renderSide(); loadList(); renderReader(); renderPz(); } },
+    favItem('l:' + id)];
+}
+function favHtml(v, rail) {
+  const items = FAVS().map(k => [k, favResolve(k)]).filter(x => x[1]);
+  if (!items.length) return '';
+  if (rail) return `<div class="rail favrail">${items.map(([k, r]) => r.kind === 'label'
+    ? `<button class="ri ${v.label_id === r.label.id ? 'on' : ''}" data-label="${r.label.id}" data-drop="label" data-fav="${esc(k)}" style="--c:${esc(r.label.color)}" title="Favoriet: label ${esc(r.label.name)}"><span class="ldot"></span></button>`
+    : `<button class="ri ${r.f && v.mailbox_id === r.mb.id && v.folder === r.f.id ? 'on' : ''}" data-mb="${r.mb.id}" data-folder="${esc(r.f ? r.f.id : '')}" data-drop="mb" data-fav="${esc(k)}" title="Favoriet: ${esc(r.kind === 'mailbox' ? r.mb.display : r.f.name + ' · ' + r.mb.display)}">${r.kind === 'mailbox' ? `<span class="av">${esc(r.mb.display.charAt(0))}</span>` : folderIcon(r.f)}${r.f && r.f.unread && cntMode(r.mb.id, r.f) !== 'none' ? `<span class="cnt">${r.f.unread}</span>` : ''}</button>`).join('')}</div>`;
+  const open = P().fav_open !== false;
+  let h = `<div class="favsec"><div class="sh"><button class="shtog" id="fav-tog" aria-expanded="${open}">${open ? ICON.chevDown : ICON.chev} Favorieten</button></div>`;
+  if (open) for (const [k, r] of items) {
+    if (r.kind === 'label') {
+      h += `<button class="si fav ${v.label_id === r.label.id ? 'on' : ''}" draggable="true" data-label="${r.label.id}" data-drop="label" data-fav="${esc(k)}" style="--c:${esc(r.label.color)}">
+        <span class="dot"></span><span class="fn">${esc(r.label.name)}</span><span class="n">${r.label.count || ''}</span></button>`;
+    } else {
+      const f = r.f || { id: '', name: 'Postvak IN', wk: 'inbox' }, on = r.f && v.mailbox_id === r.mb.id && v.folder === r.f.id;
+      h += `<button class="si fi fav ${on ? 'on' : ''}" draggable="true" data-mb="${r.mb.id}" data-folder="${esc(f.id)}" data-drop="mb" data-fav="${esc(k)}" title="${esc(r.mb.address)} › ${esc(f.name)}">
+        ${folderIcon(f)}<span class="fn">${esc(r.kind === 'mailbox' ? r.mb.display : f.name)}<span class="favsub">${esc(r.kind === 'mailbox' ? f.name : r.mb.display)}</span></span>
+        <span class="n">${r.f ? cntText(cntMode(r.mb.id, r.f), r.f) : ''}</span></button>`;
+    }
+  }
+  return h + '</div>';
+}
+function wireFavs() {
+  if ($('#fav-tog')) $('#fav-tog').onclick = () => { savePrefs({ fav_open: P().fav_open === false }); renderSide(); };
+  // volgorde: favorieten verslepen
+  $$('#side .si.fav').forEach(b => {
+    if (b._favwired) return; b._favwired = true;
+    b.addEventListener('dragstart', e => { e.dataTransfer.setData('application/x-pm-fav', b.dataset.fav); e.dataTransfer.effectAllowed = 'move'; b.classList.add('dragsrc'); });
+    b.addEventListener('dragend', () => { b.classList.remove('dragsrc'); $$('#side .favover').forEach(x => x.classList.remove('favover', 'below')); });
+    b.addEventListener('dragover', e => {
+      if (!e.dataTransfer.types.includes('application/x-pm-fav')) return;
+      e.preventDefault(); e.stopImmediatePropagation(); b.classList.remove('over');
+      const r = b.getBoundingClientRect(); $$('#side .favover').forEach(x => x !== b && x.classList.remove('favover', 'below'));
+      b.classList.add('favover'); b.classList.toggle('below', e.clientY > r.top + r.height / 2);
+    }, true);
+    b.addEventListener('drop', e => {
+      const k = e.dataTransfer.getData('application/x-pm-fav'); if (!k) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      const keys = FAVS().filter(x => favResolve(x)), below = b.classList.contains('below');
+      b.classList.remove('favover', 'below');
+      let j = keys.indexOf(b.dataset.fav) + (below ? 1 : 0);
+      if (keys.indexOf(k) < j) j--;
+      moveFav(k, j);
+    }, true);
+  });
+}
 function wireSide() {
+  wireFavs();
   $('#btn-collapse').onclick = () => { setLayout({ collapsed: !S.layout.collapsed }); renderSide(); };
   $('#btn-new').onclick = () => openCompose({ mode: 'new' });
   $('#btn-newlabel').onclick = () => newLabel();
@@ -400,12 +497,15 @@ function wireSide() {
       if (b.classList.contains('mbname')) setOpen('mb:' + b.dataset.mb, true);
       renderSide(); loadList(); renderReader(); renderPz();
     };
-    b.oncontextmenu = e => { e.preventDefault(); showMenu(e.clientX, e.clientY, b.classList.contains('mbname') ? mailboxMenu(+b.dataset.mb) : folderMenu(+b.dataset.mb, b.dataset.folder)); };
+    b.oncontextmenu = e => { e.preventDefault(); showMenu(e.clientX, e.clientY, sideMenu(b)); };
   });
   $$('#side [data-twmb]').forEach(b => b.onclick = () => { const k = 'mb:' + b.dataset.twmb; setOpen(k, b.getAttribute('aria-expanded') !== 'true'); renderSide(); });
   $$('#side [data-twf]').forEach(b => b.onclick = () => { setOpen(b.dataset.twf, b.getAttribute('aria-expanded') !== 'true'); renderSide(); });
   $$('#side [data-newf]').forEach(b => b.onclick = () => folderDialog('new', +b.dataset.newf, null));
-  $$('#side [data-label]').forEach(b => b.onclick = () => { S.view = { label_id: +b.dataset.label }; S.sel = null; S.mail = null; renderSide(); loadList(); renderReader(); renderPz(); });
+  $$('#side [data-label]').forEach(b => {
+    b.onclick = () => { S.view = { label_id: +b.dataset.label }; S.sel = null; S.mail = null; renderSide(); loadList(); renderReader(); renderPz(); };
+    b.oncontextmenu = e => { e.preventDefault(); showMenu(e.clientX, e.clientY, sideMenu(b)); };
+  });
   $$('#side [data-drop]').forEach(t => {
     if (t._wired) return; t._wired = true;
     let openT;
@@ -423,9 +523,14 @@ function wireSide() {
     });
   });
 }
+function sideMenu(b) {  // rechtermuisknop (of lang drukken) op iets in de zijbalk
+  if (b.dataset.fav) return favMenu(b.dataset.fav);
+  if (b.dataset.label) return labelMenu(+b.dataset.label);
+  return b.classList.contains('mbname') ? mailboxMenu(+b.dataset.mb) : folderMenu(+b.dataset.mb, b.dataset.folder);
+}
 function mailboxMenu(mbId) {
   return [{ n: 'Nieuwe map…', icon: ICON.plus, run: () => folderDialog('new', mbId, null) },
-    { n: 'Vernieuwen', icon: ICON.refresh, run: refreshAll }];
+    { n: 'Vernieuwen', icon: ICON.refresh, run: refreshAll }, '-', favItem('m:' + mbId)];
 }
 function folderMenu(mbId, fid) {
   const f = folderOf(mbId, fid); if (!f) return mailboxMenu(mbId);
@@ -433,8 +538,9 @@ function folderMenu(mbId, fid) {
   const cur = cntMode(mbId, f);
   const cnt = Object.entries(CNT_NAMES).map(([k, n]) => ({ n, checked: cur === k, hint: cntText(k, f, true), run: () => setCounter(mbId, fid, k) }));
   const items = isMob()
-    ? [{ head: 'Teller bij ' + f.name }, ...cnt, '-', { n: 'Nieuwe submap…', icon: ICON.plus, run: () => folderDialog('new', mbId, fid) }]
+    ? [{ head: 'Teller bij ' + f.name }, ...cnt, '-', favItem(favFolderKey(mbId, fid)), { n: 'Nieuwe submap…', icon: ICON.plus, run: () => folderDialog('new', mbId, fid) }]
     : [{ n: 'Openen', icon: folderIcon(f), run: () => { S.view = { mailbox_id: mbId, folder: fid }; S.sel = null; S.mail = null; renderSide(); loadList(); renderReader(); renderPz(); } },
+      favItem(favFolderKey(mbId, fid)),
       { n: 'Teller', icon: ICON.list, sub: cnt },
       '-', { n: 'Nieuwe submap…', icon: ICON.plus, run: () => folderDialog('new', mbId, fid) }];
   if (own) {
@@ -2143,7 +2249,7 @@ function renderReader() {
         ${m.activity.map(a => `<div><b>${esc(a.user_name)}</b> ${esc(a.action)}${a.detail ? ' ' + esc(a.detail) : ''} <span class="muted">· ${fmtDate(new Date(a.at * 1000).toISOString(), true)}</span></div>`).join('')}</details>` : ''}
     </div>
     <div class="aislot">${aiHtml()}</div>
-    <iframe class="rbody" sandbox title="Inhoud van de mail"></iframe>`;
+    <iframe class="rbody" sandbox="allow-same-origin" title="Inhoud van de mail"></iframe>`;
   const frame = $('#reader iframe.rbody'), sig = m.id + ':' + (m.body || '').length;
   if (frame && frame.dataset.sig === sig && $('#reader .rbar')) {
     // zelfde mail, alleen kop bijwerken: tekst en scrollpositie blijven staan
@@ -2152,6 +2258,7 @@ function renderReader() {
   } else {
     $('#reader').innerHTML = html;
     const f = $('#reader iframe.rbody'); f.dataset.sig = sig;
+    f.onload = () => wireMailLinks(f);
     f.srcdoc = `<!doctype html><meta charset="utf-8"><base target="_blank"><style>body{font:14px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1d2320;margin:16px 18px;overflow-wrap:anywhere}img{max-width:100%}blockquote{border-left:3px solid #e2e4df;margin:8px 0;padding-left:12px;color:#555}</style>${m.body || ''}`;
   }
   $$('#reader [data-act]').forEach(b => b.onclick = () => {
@@ -2163,6 +2270,52 @@ function renderReader() {
   $$('#reader [data-unlabel]').forEach(b => b.onclick = () => doAct('labelset', m.id, { label: +b.dataset.unlabel, on: false }));
   renderAi();
   renderRibbon();
+}
+
+// Links in de mail. De mail staat in een afgeschermd kader zonder scripts (allow-same-origin zonder allow-scripts:
+// de mail kan zelf niets uitvoeren, Plakzicht Mail kan wel de klikken afhandelen).
+const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; } };
+function linkWarning(a) {
+  // tekst die eruitziet als een adres, maar de link gaat ergens anders heen (phishing)
+  const t = (a.textContent || '').trim(), m = t.match(/^(?:https?:\/\/)?((?:[\w-]+\.)+[a-z]{2,})(?:[\/:?#]\S*)?$/i);
+  if (!m || !/^https?:/i.test(a.href)) return '';
+  const shown = m[1].replace(/^www\./, '').toLowerCase(), real = hostOf(a.href);
+  return real && shown !== real && !real.endsWith('.' + shown) ? shown : '';
+}
+function wireMailLinks(f) {
+  let doc;
+  try { doc = f.contentDocument; } catch { return; }
+  if (!doc || doc._wired) return;
+  doc._wired = true;
+  for (const a of doc.querySelectorAll('a[href]')) {
+    const href = a.getAttribute('href') || '';
+    if (/^mailto:/i.test(href)) { a.title = 'Nieuwe mail aan ' + decodeURIComponent(href.slice(7).split('?')[0]); continue; }
+    if (href.startsWith('#')) continue;
+    const warn = linkWarning(a);
+    a.title = warn ? `Let op: de tekst noemt ${warn}, maar de link gaat naar ${a.href}` : a.href;
+    if (warn) a.classList.add('pm-warn');
+  }
+  if (doc.head) doc.head.insertAdjacentHTML('beforeend', '<style>a.pm-warn{outline:2px dashed #c0392b;outline-offset:1px}</style>');
+  doc.addEventListener('click', e => {
+    const a = e.target.closest && e.target.closest('a[href]');
+    if (!a) return;
+    e.preventDefault();
+    const href = a.getAttribute('href') || '';
+    if (href.startsWith('#')) { const t = doc.getElementById(href.slice(1)) || doc.querySelector(`[name="${CSS.escape(href.slice(1))}"]`); if (t) t.scrollIntoView(); return; }
+    if (/^mailto:/i.test(href)) return openMailto(href);
+    if (!/^https?:/i.test(a.href)) return toast('Dit soort link kan Plakzicht Mail niet openen.');
+    const warn = linkWarning(a);
+    if (warn && !confirm(`Deze link gaat niet naar ${warn} maar naar:\n${a.href}\n\nToch openen?`)) return;
+    openExternal(a.href);
+  }, true);
+  doc.addEventListener('auxclick', e => { if (e.button === 1 && e.target.closest && e.target.closest('a[href]')) { e.preventDefault(); doc.dispatchEvent(new MouseEvent('click', e)); } }, true);
+}
+function openMailto(href) {
+  const [addr, query] = href.slice(7).split('?'), q = new URLSearchParams(query || '');
+  const get = k => [...q.entries()].filter(([kk]) => kk.toLowerCase() === k).map(([, v]) => v).join(', ');
+  const body = get('body');
+  openCompose({ mode: 'new', to: decodeURIComponent(addr || '') || get('to'), cc: get('cc'), subject: get('subject'),
+    text: body ? '<p>' + esc(body).replace(/\n/g, '<br>') + '</p>' : '' });
 }
 
 // ------------------------------------------------------------ concepten (blijven bewaard als je naar een andere mail gaat)
@@ -2216,7 +2369,7 @@ function buildCompose(o) {
   const m = o.mail;
   let mbId = o.from || (m && m.mailbox_id) || (S.view && S.view.mailbox_id) || S.st.mailboxes[0].id;
   if (!mailboxById(mbId)) mbId = S.st.mailboxes[0].id;
-  let to = o.to || '', cc = '', subject = o.subject || '', quote = '', order = o.order_nr || '';
+  let to = o.to || '', cc = o.cc || '', subject = o.subject || '', quote = '', order = o.order_nr || '';
   if (m && o.mode !== 'new') {
     const mine = S.st.mailboxes.map(b => b.address.toLowerCase());
     const sender = m.folder_wk === 'sent' ? m.to_addr : m.from_addr;
@@ -3513,14 +3666,14 @@ $('#side').addEventListener('click', e => {  // map of label gekozen: menu dicht
 (() => {
   let t = null, b0 = null;
   $('#side').addEventListener('pointerdown', e => {
-    const b = e.pointerType !== 'mouse' && isTouchUI() && e.target.closest('.si.fi[data-mb], .mbname[data-mb]');
+    const b = e.pointerType !== 'mouse' && isTouchUI() && e.target.closest('.si.fi[data-mb], .mbname[data-mb], .si[data-label]');
     clearTimeout(t); b0 = b || null; if (!b) return;
-    t = setTimeout(() => { b._lp = true; showMenu(0, innerHeight, b.classList.contains('mbname') ? mailboxMenu(+b.dataset.mb) : folderMenu(+b.dataset.mb, b.dataset.folder)); }, 480);
+    t = setTimeout(() => { b._lp = true; showMenu(0, innerHeight, sideMenu(b)); }, 480);
   });
   for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) $('#side').addEventListener(ev, () => clearTimeout(t));
   $('#side').addEventListener('pointermove', e => { if (b0 && (Math.abs(e.movementX) > 4 || Math.abs(e.movementY) > 4)) clearTimeout(t); });
-  $('#side').addEventListener('click', e => { const b = e.target.closest('[data-mb]'); if (b && b._lp) { b._lp = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
-  $('#side').addEventListener('contextmenu', e => { if (isTouchUI() && e.target.closest('[data-mb]')) e.preventDefault(); }, true);
+  $('#side').addEventListener('click', e => { const b = e.target.closest('[data-mb], [data-label]'); if (b && b._lp) { b._lp = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+  $('#side').addEventListener('contextmenu', e => { if (isTouchUI() && e.target.closest('[data-mb], [data-label]')) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
 })();
 $('#m-search').onclick = () => {
   const on = !document.body.classList.contains('msearch');

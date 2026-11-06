@@ -23,6 +23,15 @@ De app probeert bij het starten eerst het netwerkadres (op kantoor, snel) en and
 
 Adressen wijzigen: in de app **Mijn instellingen › Apparaten › Serveradressen van deze app wijzigen**.
 
+## Opstarten en problemen
+
+Bij het starten zie je meteen het opstartplaatje en daarna een venster *Verbinden met de server…*. De app probeert het netwerkadres
+en het internetadres tegelijk en kiest het netwerkadres als dat binnen anderhalve seconde antwoordt. Lukt geen van beide, dan
+zie je waarom, met **Opnieuw proberen** en de adressen om aan te passen.
+
+Hoe lang elke stap duurde staat in `%APPDATA%\Plakzicht Mail\werkplek.log` (ook via de knop *Logbestand openen* bij een fout).
+Stuur dat bestand mee als de app traag start.
+
 ## Op alle werkplekken tegelijk (stil)
 
 ```

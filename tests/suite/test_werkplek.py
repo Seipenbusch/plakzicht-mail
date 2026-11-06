@@ -68,6 +68,7 @@ try:
     # instellingen: eigen bestand gaat voor dat van de installatie; oud formaat {"server": ...} werkt nog
     d = tempfile.mkdtemp()
     W.CONF, W.DEFAULTS, W.USER_DIR = os.path.join(d, "u", "werkplek.json"), os.path.join(d, "werkplek-standaard.json"), os.path.join(d, "u")
+    W.LOG = os.path.join(d, "u", "werkplek.log")
     json.dump({"lokaal": "192.168.1.20:8765", "internet": "mail.plakzicht.nl"}, open(W.DEFAULTS, "w"))
     assert W.load_conf() == {"lokaal": "http://192.168.1.20:8765", "internet": "https://mail.plakzicht.nl"}
     W.save_conf("10.0.0.5:8765", "")
@@ -91,6 +92,49 @@ try:
     assert "error" in b.connect(dead, "")
     assert b.connect(srv.base, "") == {"ok": True} and b.window.url == srv.base + "/index.html"
     ok("instelscherm: verbinden opent Plakzicht Mail")
+
+    # opstarten met een nagebootst venster: meteen 'Verbinden…', daarna de server of het foutscherm, en een logbestand
+    import types
+    calls = []
+
+    class FakeWin:
+        def __init__(self, **kw):
+            self.kw, self.urls, self.htmls = kw, [], []
+
+        def load_url(self, u):
+            self.urls.append(u)
+
+        def load_html(self, h):
+            self.htmls.append(h)
+
+        def resize(self, w, h):
+            pass
+
+    fake = types.ModuleType("webview")
+    fake.settings = {}
+    fake.create_window = lambda title, url=None, html=None, js_api=None, **kw: calls.append(FakeWin(html=html, url=url, **kw)) or calls[-1]
+    fake.start = lambda func=None, *a, **kw: func and func()
+    sys.modules["webview"] = fake
+    W.save_conf(srv.base.replace("127.0.0.1", "127.0.0.1"), "")
+    W.main()
+    win = calls[-1]
+    assert win.kw["html"] == W.LOADING_HTML and win.urls == [srv.base + "/index.html"], (win.kw.get("html", "")[:40], win.urls)
+    W.save_conf(dead, "")
+    W.main()
+    win = calls[-1]
+    assert win.kw["html"] == W.LOADING_HTML and win.htmls == [W.SETUP_HTML] and not win.urls
+    logtxt = open(W.LOG, encoding="utf-8").read()
+    for want in ("start", "vensteronderdelen geladen", "venster zichtbaar", "verbonden via lokaal", "geen server bereikbaar"):
+        assert want in logtxt, want
+    ok("opstarten: meteen een venster met 'Verbinden…', daarna de server of het foutscherm; tijden in werkplek.log")
+
+    # beide adressen tegelijk: een traag netwerkadres houdt het internetadres niet op
+    import time as _t
+    slow = lambda url, timeout, local=False: (_t.sleep(timeout) or None) if url == "http://traag" else "gate"
+    t0 = _t.time()
+    assert W.choose({"lokaal": "http://traag", "internet": "https://net"}, slow) == ("https://net", "internet")
+    assert _t.time() - t0 < W.LOCAL_TIMEOUT + 0.5
+    ok("netwerkadres en internetadres tegelijk geprobeerd (thuis niet eerst wachten op het netwerkadres)")
     print("OK")
 finally:
     srv.close()
