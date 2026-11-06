@@ -29,6 +29,22 @@ app of de browser. Uitgebreid: docs/UNRAID.md, docs/WINDOWS.md, docs/MAC.md.
 Vanuit de broncode (ontwikkelen): "Start server.bat", of python app.py --server.
 "Start Plakzicht Mail.bat" opent alles op deze pc in een eigen venster.
 
+Favorieten
+----------
+- Rechtermuisknop op een map, een mailbox of een label > "Toevoegen aan
+  favorieten" (telefoon: lang drukken in het mappenmenu). Ze komen bovenin
+  de linkerkolom onder FAVORIETEN en blijven ook op hun eigen plek staan.
+- Volgorde: favorieten verslepen, of rechtermuisknop > Omhoog / Omlaag.
+- Een mailbox als favoriet opent zijn Postvak IN. Mails naar een favoriet
+  slepen verplaatst ze naar die map. Per gebruiker, op elk apparaat.
+
+Links in mails
+--------------
+- Links openen in een nieuw tabblad (Windows-app: in je gewone browser).
+- Een e-mailadres als link opent een nieuwe mail in Plakzicht Mail.
+- Muis op een link: je ziet het echte adres. Noemt de tekst een ander adres
+  dan waar de link heen gaat (phishing), dan vraagt Plakzicht Mail het eerst.
+
 Licht of donker, tellers en voetregel
 -------------------------------------
 - Knop in de bovenbalk (zon/maan): Automatisch (volgt het apparaat), Licht

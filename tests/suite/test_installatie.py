@@ -55,7 +55,7 @@ assert re.search(r"AppId=\{\{[0-9A-F-]{36}\}", iss)
 ok("installatiescript: types, adrespagina, stille installatie en dienst")
 
 wf = open(os.path.join(ROOT, ".github", "workflows", "bouwen.yml"), encoding="utf-8").read()
-for name in ('--name "Plakzicht Mail"', '--name "Plakzicht Mail server"', 'installer/plakzicht-mail.iss', "installer/dienst.ps1", '--add-data "ui;ui"'):
+for name in ('--splash installer/splash.png', '--name "Plakzicht Mail"', '--name "Plakzicht Mail server"', 'installer/plakzicht-mail.iss', "installer/dienst.ps1", '--add-data "ui;ui"'):
     assert name in wf, name
 ok("bouwstraat maakt beide programma's en het installatieprogramma")
 

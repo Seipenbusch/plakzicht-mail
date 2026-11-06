@@ -41,3 +41,18 @@ jobs:
             sleep 2
           done
           echo "Container start niet goed:"; docker logs check; exit 1
+
+  windows-app:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Windows-app proef-bouwen (met opstartplaatje)
+        run: |
+          pip install -r requirements-desktop.txt pyinstaller
+          if ($LASTEXITCODE) { exit 1 }
+          pyinstaller --noconfirm --clean --windowed --name "Plakzicht Mail" --icon installer/icoon.ico --splash installer/splash.png werkplek/werkplek.py
+          if ($LASTEXITCODE) { exit 1 }
+          if (-not (Test-Path "dist/Plakzicht Mail/Plakzicht Mail.exe")) { throw "Plakzicht Mail.exe ontbreekt" }

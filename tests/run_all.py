@@ -20,6 +20,7 @@ TESTS = [
     "test_mobiel",
     "test_weergave",
     "test_plakzicht_paneel",
+    "test_favorieten_links",
 ]
 
 

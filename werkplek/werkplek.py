@@ -12,6 +12,8 @@ import json
 import os
 import re
 import sys
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -22,7 +24,21 @@ APP_DIR = os.path.dirname(sys.executable if FROZEN else os.path.abspath(__file__
 USER_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "Plakzicht Mail") if FROZEN else APP_DIR
 CONF = os.path.join(USER_DIR, "werkplek.json")
 DEFAULTS = os.path.join(APP_DIR, "werkplek-standaard.json")
+LOG = os.path.join(USER_DIR, "werkplek.log")
 LOCAL_TIMEOUT, NET_TIMEOUT = 1.5, 8
+T0 = time.time()
+
+
+def log(msg):
+    """Logbestand met tijden per stap (werkplek.log), zodat zichtbaar is waar het opstarten blijft hangen."""
+    try:
+        os.makedirs(USER_DIR, exist_ok=True)
+        if os.path.exists(LOG) and os.path.getsize(LOG) > 200_000:
+            os.replace(LOG, LOG + ".1")
+        with open(LOG, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} +{time.time() - T0:5.2f}s  {msg}\n")
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------- instellingen
@@ -64,35 +80,58 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def probe(base, timeout):
+def probe(base, timeout, local=False):
     """'ok' = Plakzicht Mail antwoordt; 'gate' = er antwoordt iets (bijv. de aanmeldpagina van Cloudflare Access);
-    None = niet bereikbaar."""
+    None = niet bereikbaar. Lokaal zonder proxy: Windows-proxyinstellingen kunnen anders seconden kosten."""
     if not base:
         return None
-    op = urllib.request.build_opener(_NoRedirect)
+    handlers = [_NoRedirect] + ([urllib.request.ProxyHandler({})] if local else [])
+    op = urllib.request.build_opener(*handlers)
+    t = time.time()
     try:
         with op.open(base + "/health", timeout=timeout) as r:
             try:
-                return "ok" if json.loads(r.read(2000)).get("app") == "plakzicht-mail" else "gate"
+                res = "ok" if json.loads(r.read(2000)).get("app") == "plakzicht-mail" else "gate"
             except ValueError:
-                return "gate"
-    except urllib.error.HTTPError:
-        return "gate"  # 302/401/403: Cloudflare Access vraagt eerst om aanmelden; het venster toont dat
-    except (urllib.error.URLError, OSError, ValueError):
-        return None
+                res = "gate"
+    except urllib.error.HTTPError as e:
+        res = "gate"  # 302/401/403: Cloudflare Access vraagt eerst om aanmelden; het venster toont dat
+        log(f"{base}: HTTP {e.code}")
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        res = None
+        log(f"{base}: niet bereikbaar ({getattr(e, 'reason', e)})")
+    log(f"{base}: {res or 'geen antwoord'} in {time.time() - t:.2f}s")
+    return res
 
 
 def choose(conf, probe_fn=probe):
-    """Eerst lokaal (alleen als het echt Plakzicht Mail is), dan internet. Geeft (adres, uitleg) of (None, foutmelding)."""
+    """Beide adressen tegelijk proberen. Het netwerkadres wint als het binnen LOCAL_TIMEOUT echt Plakzicht Mail is,
+    anders het internetadres. Geeft (adres, 'lokaal'/'internet') of (None, foutmelding)."""
     lok, net = conf.get("lokaal"), conf.get("internet")
     if not lok and not net:
         return None, ""
-    if lok and probe_fn(lok, LOCAL_TIMEOUT) == "ok":
-        return lok, "lokaal"
-    if net and probe_fn(net, NET_TIMEOUT):
-        return net, "internet"
-    if lok and not net and probe_fn(lok, NET_TIMEOUT) == "ok":  # alleen lokaal ingevuld: iets langer wachten
-        return lok, "lokaal"
+    res, done = {}, {k: threading.Event() for k in ("lokaal", "internet")}
+
+    def run(k, url, timeout):
+        try:
+            res[k] = probe_fn(url, timeout, local=True) if k == "lokaal" else probe_fn(url, timeout)
+        except TypeError:  # probe zonder local-argument (tests)
+            res[k] = probe_fn(url, timeout)
+        finally:
+            done[k].set()
+    for k, url in (("lokaal", lok), ("internet", net)):
+        if url:
+            threading.Thread(target=run, args=(k, url, LOCAL_TIMEOUT if (k == "lokaal" and net) else NET_TIMEOUT), daemon=True).start()
+        else:
+            done[k].set()
+    if lok:
+        done["lokaal"].wait(NET_TIMEOUT + 1)
+        if res.get("lokaal") == "ok":
+            return lok, "lokaal"
+    if net:
+        done["internet"].wait(NET_TIMEOUT + 1)
+        if res.get("internet"):
+            return net, "internet"
     parts = [a for a in (lok, net) if a]
     return None, ("De server is niet bereikbaar op " + " en ".join(parts) +
                   ". Staat de server aan en heb je internet? Controleer anders de adressen.")
@@ -113,18 +152,41 @@ button{font:inherit;padding:9px 14px;border-radius:7px;border:0;background:var(-
 <label>Adres in het bedrijfsnetwerk<input name="lokaal" placeholder="http://192.168.1.20:8765"></label>
 <label>Internetadres (via Cloudflare)<input name="internet" placeholder="https://mail.plakzicht.nl"></label>
 <p class="err" id="err" hidden></p>
-<div class="row"><button id="go">Verbinden</button><button type="button" class="ghost" id="cancel" hidden>Annuleren</button></div></form>
+<div class="row"><button id="go">Verbinden</button><button type="button" class="ghost" id="cancel" hidden>Annuleren</button>
+<button type="button" class="ghost" id="logb" hidden>Logbestand openen</button></div></form>
 <script>
 const f=document.getElementById('f'),err=document.getElementById('err'),go=document.getElementById('go');
 function ready(fn){ if(window.pywebview&&window.pywebview.api) fn(); else window.addEventListener('pywebviewready',fn); }
 ready(async()=>{ const c=await window.pywebview.api.current();
-  f.lokaal.value=c.lokaal||''; f.internet.value=c.internet||''; if(c.error){err.textContent=c.error;err.hidden=false;}
+  f.lokaal.value=c.lokaal||''; f.internet.value=c.internet||''; if(c.error){err.textContent=c.error;err.hidden=false;go.textContent='Opnieuw proberen';
+    const l=document.getElementById('logb');l.hidden=false;l.onclick=()=>window.pywebview.api.open_log();}
   if(c.back){const b=document.getElementById('cancel');b.hidden=false;b.onclick=()=>window.pywebview.api.back();} });
 f.onsubmit=async e=>{e.preventDefault(); if(!f.lokaal.value.trim()&&!f.internet.value.trim()){err.textContent='Vul minstens een adres in.';err.hidden=false;return;}
   go.disabled=true; go.textContent='Verbinden…'; err.hidden=true;
   const r=await window.pywebview.api.connect(f.lokaal.value,f.internet.value);
   if(r&&r.error){err.textContent=r.error;err.hidden=false;go.disabled=false;go.textContent='Verbinden';} };
 </script></body></html>"""
+
+
+LOADING_HTML = """<!doctype html><html lang="nl"><head><meta charset="utf-8"><title>Plakzicht Mail</title><style>
+:root{color-scheme:light dark;--bg:#f4f6f5;--ink:#1d2421;--muted:#5f6b66;--acc:#1f6f54}
+@media (prefers-color-scheme:dark){:root{--bg:#0c0f0e;--ink:#e6ebe8;--muted:#9aa7a1;--acc:#5cc49b}}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--ink);font:14px/1.5 "Segoe UI",system-ui,sans-serif}
+.b{display:grid;justify-items:center;gap:14px;text-align:center}h1{margin:0;font-size:22px}h1 span{color:var(--acc)}
+.sp{width:28px;height:28px;border:3px solid color-mix(in srgb,var(--acc) 25%,transparent);border-top-color:var(--acc);border-radius:50%;animation:r .8s linear infinite}
+@keyframes r{to{transform:rotate(360deg)}}p{margin:0;color:var(--muted)}#a{font-size:12.5px}
+</style></head><body><div class="b"><h1>Plakzicht <span>Mail</span></h1><div class="sp"></div><p>Verbinden met de server…</p><p id="a"></p></div>
+<script>function ready(fn){ if(window.pywebview&&window.pywebview.api) fn(); else window.addEventListener('pywebviewready',fn); }
+ready(async()=>{ const c=await window.pywebview.api.current(); document.getElementById('a').textContent=[c.lokaal,c.internet].filter(Boolean).join('  ·  '); });</script></body></html>"""
+
+
+def close_splash():
+    """Het opstartplaatje van de installatie (PyInstaller) sluiten zodra het venster er is."""
+    try:
+        import pyi_splash  # alleen in de geïnstalleerde versie
+        pyi_splash.close()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 class Bridge:
@@ -139,11 +201,33 @@ class Bridge:
     def current(self):
         return {**load_conf(), "error": self.error, "back": bool(self.base)}
 
+    def connect_now(self):
+        """Verbinden met de opgeslagen adressen (bij het starten en bij 'Opnieuw proberen')."""
+        base, why = choose(load_conf())
+        if not base:
+            log("geen server bereikbaar")
+            self.error = why
+            self.window.load_html(SETUP_HTML)
+            return False
+        log(f"verbonden via {why}: {base}")
+        self.base, self.error = base, ""
+        self.window.load_url(base + "/index.html")
+        return True
+
+    def open_log(self):
+        try:
+            os.startfile(LOG)  # noqa: S606 - alleen op Windows
+        except (AttributeError, OSError):
+            webbrowser.open("file://" + LOG)
+        return True
+
     def connect(self, lokaal, internet):
         conf = save_conf(lokaal, internet)
         base, why = choose(conf)
         if not base:
+            log("geen server bereikbaar met de ingevulde adressen")
             return {"error": why or "Vul minstens een adres in."}
+        log(f"verbonden via {why}: {base}")
         self.base, self.error = base, ""
         try:
             self.window.resize(1400, 880)
@@ -187,30 +271,39 @@ class Bridge:
 
 
 def main():
+    log(f"start ({'geïnstalleerd' if FROZEN else 'vanuit de broncode'})")
+    conf = load_conf()
     bridge = Bridge()
-    base, why = choose(load_conf())
-    bridge.base, bridge.error = base, why
     try:
         import webview
     except ImportError:  # zonder pywebview: in de gewone browser
+        base, why = choose(conf)
         if base:
             webbrowser.open(base + "/index.html")
         else:
             print(why or "Vul het serveradres in werkplek.json in, bijvoorbeeld {\"lokaal\": \"http://192.168.1.20:8765\"}.")
         return
+    log("vensteronderdelen geladen")
     try:
         webview.settings["ALLOW_DOWNLOADS"] = True
     except (AttributeError, TypeError):
         pass
-    if base:
-        win = webview.create_window("Plakzicht Mail", base + "/index.html", js_api=bridge, width=1400, height=880, min_size=(1000, 640))
-    else:
-        win = webview.create_window("Plakzicht Mail", html=SETUP_HTML, js_api=bridge, width=620, height=560, min_size=(420, 460))
+    has = bool(conf["lokaal"] or conf["internet"])
+    # Meteen een venster ('Verbinden met de server…'); het verbinden gebeurt daarna, zodat de app nooit lijkt vast te hangen.
+    win = webview.create_window("Plakzicht Mail", html=LOADING_HTML if has else SETUP_HTML, js_api=bridge,
+                                width=1400 if has else 620, height=880 if has else 560, min_size=(420, 460))
     bridge.window = win
-    # cookies bewaren (ingelogd blijven) in een eigen map per gebruiker
-    storage = os.path.join(USER_DIR, "venster")
+
+    def started():
+        close_splash()
+        log("venster zichtbaar")
+        if has:
+            bridge.connect_now()
+
+    storage = os.path.join(USER_DIR, "venster")  # cookies bewaren (ingelogd blijven), per gebruiker
     os.makedirs(storage, exist_ok=True)
-    webview.start(private_mode=False, storage_path=storage)
+    webview.start(started, private_mode=False, storage_path=storage)
+    log("afgesloten")
 
 
 if __name__ == "__main__":

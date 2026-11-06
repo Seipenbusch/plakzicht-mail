@@ -36,6 +36,8 @@ Plakzicht Mail werkt in de browser van je telefoon en past zich vanzelf aan: op 
 | Licht of donker | knop (zon/maan/half) naast het vergrootglas |
 | Teller bij een map kiezen | in het mappenmenu **lang drukken** op de map › ongelezen, totaal, beide of geen |
 | Aantal mails | onderin de lijst; bij een selectie staat er hoeveel je hebt geselecteerd |
+| Favorieten | in het mappenmenu **lang drukken** op een map, mailbox of label › *Toevoegen aan favorieten*; ze staan dan bovenin |
+| Link in een mail | tik erop: opent in de browser; een e-mailadres opent een nieuwe mail |
 
 **Vegen zelf kiezen:** *Mijn instellingen › Mobiel*. Per richting: niets, archiveren, verwijderen, gelezen/ongelezen,
 vlag, beantwoorden, oppakken, label kiezen of verplaatsen. De keuze geldt op al je telefoons en tablets.

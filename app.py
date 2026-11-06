@@ -79,7 +79,10 @@ DEFAULT_PREFS = {
     "swipe": {"left": "archive", "right": "read"},   # vegen op de telefoon
     "theme": "auto",                                  # licht/donker: auto (volgt het apparaat), light, dark
     "counters": {},                                   # teller per map: "<mailbox>:<map>" -> unread/total/both/none
+    "favorites": [],                                  # bovenin de zijbalk: "f:<mailbox>:<map>", "m:<mailbox>", "l:<label>"
+    "fav_open": True,
 }
+FAV_RE = re.compile(r"^(f:\d+:.{1,250}|m:\d+|l:\d+)$")
 THEMES = ("auto", "light", "dark")
 COUNTER_MODES = ("unread", "total", "both", "none")
 SWIPE_ACTIONS = ("none", "archive", "delete", "read", "flag", "reply", "claim", "label", "move")
@@ -1157,6 +1160,14 @@ class Api:
                     p[k] = {kk: int(min(600, max(18, vv))) for kk, vv in v.items() if kk in LIST_COLS and isinstance(vv, (int, float))}
                 elif k == "sort" and isinstance(v, dict) and v.get("key") in SORT_KEYS:
                     p[k] = {"key": v["key"], "dir": "asc" if v.get("dir") == "asc" else "desc"}
+                elif k == "favorites" and isinstance(v, list):
+                    seen = []
+                    for x in v:
+                        if isinstance(x, str) and FAV_RE.match(x) and x not in seen:
+                            seen.append(x)
+                    p[k] = seen[:60]
+                elif k == "fav_open":
+                    p[k] = bool(v)
                 elif k == "theme" and v in THEMES:
                     p[k] = v
                 elif k == "counters" and isinstance(v, dict):
