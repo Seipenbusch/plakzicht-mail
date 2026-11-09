@@ -33,6 +33,7 @@ const ICON = {
   check: svg('<path d="M20 6 9 17l-5-5"/>'),
   chev: svg('<path d="m9 18 6-6-6-6"/>'),
   panel: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/>'),
+  template: svg('<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>'),
   clip: svg('<path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>'),
   msLogo: '<svg viewBox="0 0 21 21" aria-hidden="true" width="16" height="16"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>',
   download: svg('<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>'),
@@ -183,7 +184,7 @@ function dialog(html, onOpen) {
   d.innerHTML = html;
   return new Promise(res => {
     const done = v => { d.close(); res(v); };
-    d.onclose = () => res(null);
+    d.onclose = () => { if (!d.open) res(null); };  // een late 'close' van een vorige dialoog sluit deze niet
     d.onsubmit = e => { e.preventDefault(); done(new FormData(e.target)); };
     $$('[data-cancel]', d).forEach(b => b.onclick = () => done(null));
     d.showModal();
@@ -231,9 +232,8 @@ function boot(st) {
   $('#whoami').textContent = st.user.name;
   $('#btn-admin').hidden = st.user.role !== 'beheerder';
   setDensity(st.user.density, false);
-  S.layout = { ...LAYOUT_DEFAULT, ...(st.user.layout || {}) };
-  applyLayout();
-  if (!(st.user.layout || {}).list && st.user.prefs.listview === 'kolommen') S.layout.list = clampCol('list', colsNeeded(st.user.prefs.cols || DEFAULT_COLS) + 4), applyLayout();
+  loadLayout(st.user.layout);
+  if (!S.want.list && st.user.prefs.listview === 'kolommen') S.want.list = colsNeeded(st.user.prefs.cols || DEFAULT_COLS) + 4, applyLayout();  // alleen tonen, niet opslaan
   S.view = st.mailboxes.length ? inboxView(st.mailboxes[0]) : null;
   showModeBadge();
   S.sel = null; S.mail = null; S.cmp = null; S.ai = null; S.search = ''; $('#search').value = ''; S.filter = 'alle';
@@ -260,7 +260,29 @@ function setDensity(d, save = true) {
 }
 $$('.density button').forEach(b => b.onclick = () => setDensity(b.dataset.density));
 
-// ------------------------------------------------------------ kolommen (per gebruiker)
+// ------------------------------------------------------------ kolommen (per gebruiker en per scherm)
+// S.want: de breedtes die de gebruiker op dit scherm koos (bewaard op de server, per schermresolutie).
+// S.layout: wat nu getoond wordt = S.want, passend gemaakt in het venster. Een smal venster, telefoon of tablet verandert
+// S.want nooit; alleen zelf slepen, dubbelklikken, de pijltjestoetsen of een knop als 'Breder maken' slaat iets op.
+const screenKey = () => `${Math.round(screen.width)}x${Math.round(screen.height)}`;
+function screenWidths(lay, key) {
+  const scr = (lay && lay.screens) || {};
+  if (scr[key]) return { ...scr[key] };
+  const [w, h] = key.split('x').map(Number);
+  const near = Object.keys(scr).sort((a, b) => { const d = k => { const [x, y] = k.split('x').map(Number); return Math.abs(x - w) + Math.abs(y - h); }; return d(a) - d(b); })[0];
+  const base = near ? scr[near] : lay || {};  // nieuw scherm: het scherm dat er het meest op lijkt, anders de oude instelling
+  const out = {};
+  for (const k of ['side', 'list', 'pz']) if (base[k]) out[k] = base[k];
+  if (base.colw) out.colw = { ...base.colw };
+  return out;
+}
+function loadLayout(lay) {
+  S.lay = lay || {};
+  S.screen = screenKey();
+  S.want = screenWidths(S.lay, S.screen);
+  S.layout = { ...LAYOUT_DEFAULT, collapsed: !!S.lay.collapsed, pz_hidden: !!S.lay.pz_hidden };
+  applyLayout();
+}
 function clampCol(key, w) {
   const [lo, hi] = LIMITS[key], L = S.layout;
   const width = k => (k === 'side' && L.collapsed ? 56 : k === 'pz' && L.pz_hidden ? 0 : L[k]);
@@ -271,15 +293,39 @@ function clampCol(key, w) {
 }
 function applyLayout() {
   const L = S.layout, m = $('#main');
+  for (const k of ['side', 'list', 'pz']) L[k] = Math.max(LIMITS[k][0], Math.min(LIMITS[k][1], S.want[k] || LAYOUT_DEFAULT[k]));
+  if (m.clientWidth) for (const k of ['list', 'pz', 'side']) L[k] = clampCol(k, L[k]);  // past het niet: eerst de lijst smaller
   m.style.setProperty('--c-side', L.side + 'px');
   m.style.setProperty('--c-list', L.list + 'px');
   m.style.setProperty('--c-pz', L.pz + 'px');
   document.body.classList.toggle('side-collapsed', !!L.collapsed);
   document.body.classList.toggle('pz-hidden', !!L.pz_hidden);
 }
-let layoutT;
-function saveLayout() { clearTimeout(layoutT); layoutT = setTimeout(() => run(async () => { S.layout = { ...S.layout, ...(await api('set_layout', S.layout)) }; }), 400); }
-function setLayout(patch) { S.layout = { ...S.layout, ...patch }; applyLayout(); saveLayout(); }
+let layoutT, layoutQ = {};
+function sendLayout(patch) {
+  Object.assign(layoutQ, patch);
+  clearTimeout(layoutT);
+  layoutT = setTimeout(() => { const q = layoutQ; layoutQ = {}; run(async () => { S.lay = await api('set_layout', q); }); }, 400);
+}
+// Zelf gekozen breedte(s) op dit scherm bewaren
+function setWidths(patch) {
+  S.want = { ...S.want, ...patch };
+  applyLayout();
+  sendLayout({ screen: S.screen, widths: { ...(layoutQ.screen === S.screen && layoutQ.widths || {}), ...patch } });
+}
+// Zijbalk inklappen / Plakzicht verbergen (geldt op elk scherm)
+function setLayout(patch) {
+  const w = {}, f = {};
+  for (const [k, v] of Object.entries(patch)) (k in LIMITS ? w : f)[k] = v;
+  Object.assign(S.layout, f);
+  if (Object.keys(f).length) sendLayout(f);
+  if (Object.keys(w).length) setWidths(w); else applyLayout();
+}
+function resetWidths() {
+  S.want = {}; applyLayout();
+  sendLayout({ screen: S.screen, widths: null });
+  if (S.lay.screens) delete S.lay.screens[S.screen];
+}
 $$('.gutter').forEach(g => {
   const key = g.dataset.g;
   const locked = () => key === 'side' && S.layout.collapsed;
@@ -288,22 +334,25 @@ $$('.gutter').forEach(g => {
     e.preventDefault(); g.setPointerCapture(e.pointerId);
     const x0 = e.clientX, w0 = S.layout[key];
     g.classList.add('active'); document.body.classList.add('resizing');
-    const move = ev => { const d = ev.clientX - x0; S.layout[key] = clampCol(key, w0 + (key === 'pz' ? -d : d)); applyLayout(); };
+    const move = ev => { const d = ev.clientX - x0; S.layout[key] = clampCol(key, w0 + (key === 'pz' ? -d : d)); $('#main').style.setProperty('--c-' + key, S.layout[key] + 'px'); };
     const up = () => { g.removeEventListener('pointermove', move); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up);
-      g.classList.remove('active'); document.body.classList.remove('resizing'); saveLayout(); };
+      g.classList.remove('active'); document.body.classList.remove('resizing'); if (S.layout[key] !== w0) setWidths({ [key]: S.layout[key] }); };
     g.addEventListener('pointermove', move); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
   });
-  g.addEventListener('dblclick', () => { if (!locked()) setLayout({ [key]: clampCol(key, LAYOUT_DEFAULT[key]) }); });
+  g.addEventListener('dblclick', () => { if (!locked()) setWidths({ [key]: LAYOUT_DEFAULT[key] }); });
   g.addEventListener('keydown', e => {
     if (locked() || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
     e.preventDefault();
     const step = (e.key === 'ArrowRight' ? 16 : -16) * (key === 'pz' ? -1 : 1);
-    setLayout({ [key]: clampCol(key, S.layout[key] + step) });
+    setWidths({ [key]: clampCol(key, S.layout[key] + step) });
   });
 });
 window.addEventListener('resize', () => {
   if (!S.layout) return;
-  for (const k of ['list', 'pz', 'side']) S.layout[k] = clampCol(k, S.layout[k]);
+  if (screenKey() !== S.screen) {  // venster naar een ander scherm geschoven: breedtes van dat scherm
+    S.screen = screenKey(); S.want = screenWidths(S.lay, S.screen);
+    if ($('#list.cols') && S.st) renderList();
+  }
   applyLayout();
 });
 
@@ -763,7 +812,8 @@ function mailMenu(id) {
   return [
     ...(isTouchUI() ? [] : [{ n: 'Openen', icon: ICON.mailOpen, run: () => openMail(id) }, it('popout'), '-']),
     row && row.claim && row.claim.mine ? it('unclaim') : { ...it('claim'), disabled: !!(row && row.claim) }, '-',
-    it('reply'), it('replyall'), it('forward'), '-',
+    it('reply'), it('replyall'), it('forward'),
+    { n: 'Beantwoorden met sjabloon…', icon: ICON.template, run: () => replyWithTemplate(id) }, '-',
     row && row.is_read ? it('unread') : it('read'),
     { ...it('flag'), n: row && row.flagged ? 'Vlag weghalen' : 'Vlag zetten' },
     { n: 'Opvolgen', act: 'flag', sub: followItems(id) },
@@ -1841,10 +1891,12 @@ function collabChips(m) {
 // ------------------------------------------------------------ voorkeuren per gebruiker (kolommen, sorteren, scheidingsbalken, antwoorden)
 const P = () => S.st.user.prefs;
 let prefT;
+let prefQ = {};
 function savePrefs(patch, quiet) {
   Object.assign(S.st.user.prefs, patch);
+  Object.assign(prefQ, patch);  // snel na elkaar: alles meesturen, niet alleen de laatste wijziging
   clearTimeout(prefT);
-  prefT = setTimeout(() => api('set_prefs', patch).then(p => { S.st.user.prefs = p; }).catch(e => !quiet && toast(e.message)), 250);
+  prefT = setTimeout(() => { const q = prefQ; prefQ = {}; api('set_prefs', q).then(p => { S.st.user.prefs = p; }).catch(e => !quiet && toast(e.message)); }, 250);
 }
 
 // ------------------------------------------------------------ lijst: kolommen, sorteren en groeperen (zoals Outlook)
@@ -1873,7 +1925,7 @@ const FILTERS = [['alle', 'Alle'], ['ongelezen', 'Ongelezen'], ['gemarkeerd', 'M
   ['mijn', 'Opgepakt door mij'], ['vrij', 'Nog niet opgepakt'], ['zonder_order', 'Zonder order']];
 const sentView = () => { const f = S.view && S.view.mailbox_id ? folderOf(S.view.mailbox_id, S.view.folder) : null; return !!(f && (f.wk === 'sent' || f.wk === 'drafts')); };
 const colSortKey = k => { const s = COLDEF[k].s; return typeof s === 'function' ? s() : s; };
-const colW = k => (P().colw || {})[k] || COLDEF[k].w;
+const colW = k => ((S.want && S.want.colw) || P().colw || {})[k] || COLDEF[k].w;  // per scherm, anders de oude instelling
 const whoOf = m => m.folder_wk === 'sent' || m.folder_wk === 'drafts' ? (m.to_addr || '') : (m.from_name || m.from_addr || '');
 const normSubj = s => String(s || '').replace(/^\s*((re|fw|fwd|antw|doorst)\s*:\s*)+/i, '').trim().toLowerCase();
 const isoDay = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -2092,10 +2144,10 @@ function renderList() {
   });
   $$('#list .rz').forEach(z => !z._wired && (z._wired = true) && z.addEventListener('pointerdown', e => {
     e.preventDefault(); e.stopPropagation(); z.setPointerCapture(e.pointerId);
-    const k = z.dataset.rz, x0 = e.clientX, w0 = colW(k), colw = { ...(P().colw || {}) };
+    const k = z.dataset.rz, x0 = e.clientX, w0 = colW(k), colw = { ...((S.want && S.want.colw) || P().colw || {}) };
     document.body.classList.add('resizing');
-    const mv = ev => { colw[k] = Math.max(18, Math.min(600, w0 + ev.clientX - x0)); S.st.user.prefs.colw = colw; const t = colsTemplate(cols); $$('#list .chdr, #list .crow').forEach(r => r.style.setProperty('--cols', t)); };
-    const up = () => { z.removeEventListener('pointermove', mv); z.removeEventListener('pointerup', up); document.body.classList.remove('resizing'); savePrefs({ colw }, true); };
+    const mv = ev => { colw[k] = Math.max(18, Math.min(600, w0 + ev.clientX - x0)); S.want.colw = colw; const t = colsTemplate(cols); $$('#list .chdr, #list .crow').forEach(r => r.style.setProperty('--cols', t)); };
+    const up = () => { z.removeEventListener('pointermove', mv); z.removeEventListener('pointerup', up); document.body.classList.remove('resizing'); setWidths({ colw }); };
     z.addEventListener('pointermove', mv); z.addEventListener('pointerup', up);
   }));
   $$('#list [data-selbox]').forEach(b => b.onclick = e => { e.stopPropagation(); if (e.shiftKey && (S.sel || S.anchor)) selRange(b.dataset.selbox); else selToggle(b.dataset.selbox); });
@@ -2146,7 +2198,7 @@ function colItems() {
   const cols = P().cols && P().cols.length ? P().cols : DEFAULT_COLS;
   return [...Object.keys(COLDEF).map(k => ({ n: COL_NAMES[k], checked: cols.includes(k), disabled: k === 'from' || k === 'subj',
     run: () => { const order = Object.keys(COLDEF); const next = cols.includes(k) ? cols.filter(x => x !== k) : [...cols, k].sort((a, b) => order.indexOf(a) - order.indexOf(b)); savePrefs({ cols: next }); renderList(); } })),
-    '-', { n: 'Standaardkolommen en -breedtes', icon: ICON.refresh, run: () => { savePrefs({ cols: DEFAULT_COLS, colw: {} }); renderList(); } }];
+    '-', { n: 'Standaardkolommen en -breedtes', icon: ICON.refresh, run: () => { savePrefs({ cols: DEFAULT_COLS, colw: {} }); setWidths({ colw: {} }); renderList(); } }];
 }
 function viewMenu() {
   return [{ n: 'Filter', icon: ICON.funnel, sub: FILTERS.map(([k, n]) => ({ n, checked: S.filter === k, run: () => setFilter(k) })) },
@@ -2353,7 +2405,7 @@ async function resumeDraft(key) {
 // ------------------------------------------------------------ opstellen (in het leesvenster of volledig scherm)
 async function openCompose(o) {
   if (!S.st.mailboxes.length) return toast('Je hebt geen mailbox om vanuit te versturen.');
-  const m = o.mail, refId = m && o.mode !== 'new' ? m.id : null;
+  const m = o.mail, refId = m && o.mode !== 'new' ? String(m.id) : null;  // altijd tekst, net als de regels in de lijst
   if (S.cmp && S.cmp.refId && S.cmp.refId === refId) { if (o.full) { S.cmp.full = true; showCompose(); } return; }
   if (S.cmp) stashCompose();
   if (refId && DRAFTS[refId]) { S.cmp = { ...DRAFTS[refId] }; toast('Je concept voor deze mail is weer geopend'); }
@@ -2384,7 +2436,7 @@ function buildCompose(o) {
   const others = m ? [...(m.claim && !m.claim.mine ? [`${m.claim.name} heeft deze mail opgepakt`] : []),
     ...(m.busy || []).filter(b => b.state === 'antwoordt').map(b => `${b.name} is deze mail ook aan het beantwoorden`),
     ...(m.replied ? [`al ${m.replied.action} door ${m.replied.name} (${fmtDate(new Date(m.replied.at * 1000).toISOString(), true)})`] : [])] : [];
-  return { key: m && o.mode !== 'new' ? m.id : 'new:' + Date.now(), mode: o.mode, refId: m && o.mode !== 'new' ? m.id : null,
+  return { key: m && o.mode !== 'new' ? String(m.id) : 'new:' + Date.now(), mode: o.mode, refId: m && o.mode !== 'new' ? String(m.id) : null,
     refSubject: m ? m.subject : '', mb: mbId, to, cc, subj: subject, to0: to, subj0: subject, order, quote, others, showQuote: false,
     html: (o.text ? sanitize(o.text) : '<p><br></p>') + `<div data-sig>${sig ? sigHtml(sig, mbId) : ''}</div>`, sigId: sig ? String(sig.id) : '' };
 }
@@ -2397,6 +2449,7 @@ function composeHtml(c) {
       <button class="btn" data-c="discard" title="Concept weggooien">${ICON.trash} Verwijderen</button>
       <span class="ctitle">${esc(MODE_TITLE[c.mode] || '')}</span>
       <span class="grow"></span>
+      <button class="btn" data-c="tpl" title="Sjabloon invoegen">${ICON.template} Sjabloon</button>
       <button class="btn" data-c="ai" ${cl.ok ? '' : 'disabled'} title="${esc(cl.ok ? 'Claude: antwoord schrijven, tekst verbeteren of vertalen' : cl.why)}">${ICON.sparkle} Claude ▾</button>
       <button class="btn" data-c="insert" id="c-insert" title="Ordergegevens uit Plakzicht in de mail zetten">${ICON.link} Ordergegevens</button>
       ${S.popout || isMob() ? '' : c.full ? `<button class="btn" data-c="pane" title="Terug naar het leesvenster">Naar leesvenster</button>` : `<button class="btn" data-c="full" title="Volledig scherm">${ICON.popout} Uitklappen</button>`}
@@ -2408,6 +2461,7 @@ function composeHtml(c) {
     <div class="cfield acwrap"><button type="button" class="cbtn" data-c="pickcc" title="Kies uit het adresboek">CC</button><input id="c-cc" value="${esc(c.cc)}" autocomplete="off"></div>
     <label class="cfield"><span>Onderwerp</span><input id="c-subj" value="${esc(c.subj)}" style="font-weight:600"></label>
     <div class="cfield"><span>Order</span><div id="c-order-view" class="row"></div></div>
+    <div class="cfield" id="c-files-row" ${c.files && c.files.length ? '' : 'hidden'}><span>Bijlagen</span><div id="c-files" class="cfiles"></div></div>
     ${toolbarHtml(true)}
     <div class="editor" id="editor" contenteditable="true" spellcheck="true">${c.html}</div>
     ${c.quote ? `<div class="cquote"><button type="button" class="linkish" data-c="quote">${c.showQuote ? 'Eerdere berichten verbergen' : '··· Eerdere berichten tonen'}</button>${c.showQuote ? `<div class="qbody">${c.quote}</div>` : ''}</div>` : ''}
@@ -2474,7 +2528,16 @@ function wireCompose(root) {
   $('#c-from', root).onchange = e => { const s = sigFor(+e.target.value); $('#c-sig', root).value = s ? s.id : ''; setSig(s ? s.id : ''); };
   $('#c-sig', root).onchange = e => setSig(e.target.value);
   ['#c-to', '#c-cc', '#c-subj'].forEach(s => $(s, root).addEventListener('input', touchDraft));
-  ed.addEventListener('input', touchDraft);
+  ed.addEventListener('input', () => {
+    // gele plek uit een sjabloon ingevuld: markering weg (de tekst blijft, de cursor ook)
+    $$('mark[data-fill]', ed).forEach(m => {
+      if (/^\[.*\]$/.test(m.textContent.trim())) return;
+      const sel = getSelection(), node = sel.focusNode, off = sel.focusOffset;
+      m.replaceWith(...m.childNodes);
+      if (node && ed.contains(node)) { const r = document.createRange(); r.setStart(node, Math.min(off, node.length ?? off)); r.collapse(true); sel.removeAllRanges(); sel.addRange(r); }
+    });
+    touchDraft();
+  });
   autocomplete($('#c-to', root)); autocomplete($('#c-cc', root));
   const pick = async sel => { const a = await addressBook(false, true); if (a && typeof a === 'string') { const i = $(sel, root); i.value = (i.value.trim() ? i.value.replace(/[,;\s]*$/, '') + ', ' : '') + a; touchDraft(); } };
   const C = {
@@ -2496,10 +2559,13 @@ function wireCompose(root) {
     pickto: () => pick('#c-to'), pickcc: () => pick('#c-cc'),
     ai: b => { const r = b.getBoundingClientRect(); showMenu(r.left, r.bottom + 4, composeAiItems(c, ed)); },
     insert: () => {},
+    tpl: () => tplPicker(c, ed, root),
   };
   $$('[data-c]', root).forEach(b => { if (b.dataset.c !== 'insert') b.onclick = () => C[b.dataset.c](b); });
   const range = document.createRange(); range.setStart(ed.firstChild || ed, 0); range.collapse(true); savedRange = range;
   (c.mode === 'new' && !c.to ? $('#c-to', root) : c.mode === 'forward' && !c.to ? $('#c-to', root) : ed).focus();
+  renderCmpFiles(root);
+  if (PICK_TPL) { PICK_TPL = false; setTimeout(() => tplPicker(c, ed, root), 60); }
 }
 function composeAiItems(c, ed) {
   const imp = how => async () => {
@@ -2521,14 +2587,235 @@ function composeAiItems(c, ed) {
     { n: 'Formeler', icon: ICON.sparkle, run: imp('formeler') }, { n: 'Vriendelijker', icon: ICON.sparkle, run: imp('vriendelijker') }, '-',
     { n: 'Mijn tekst vertalen', icon: ICON.globe, sub: translateItems(tr) }];
 }
+// ------------------------------------------------------------ sjablonen
+// Eigen sjablonen (alleen jij) en mailbox-sjablonen (iedereen met toegang tot die mailbox). Invoegen gebeurt altijd in
+// het opstelscherm: er wordt nooit iets verstuurd zonder dat iemand het eerst heeft gezien.
+const TPL_FIELDS = [['voornaam', 'Voornaam'], ['naam', 'Naam'], ['email', 'Mailadres'], ['klant', 'Klant'], ['mijn_naam', 'Mijn naam'],
+  ['mailbox', 'Mailbox'], ['datum', 'Datum'], ['ordernummer', 'Ordernummer'], ['orderstatus', 'Orderstatus'], ['verzenddatum', 'Verzenddatum'],
+  ['track_trace', 'Track & trace'], ['offertenummer', 'Offertenummer'], ['offertestatus', 'Offertestatus']];
+const TPL_HELP = { voornaam: 'van de ontvanger', naam: 'van de ontvanger', email: 'van de ontvanger', klant: 'uit Plakzicht', mijn_naam: 'wie verstuurt',
+  mailbox: 'waaruit je mailt', datum: 'van vandaag', ordernummer: 'gekoppelde order', orderstatus: 'productie, uit Plakzicht', verzenddatum: 'uit Plakzicht',
+  track_trace: 'link, uit Plakzicht', offertenummer: 'gekoppelde offerte', offertestatus: 'uit Plakzicht' };
+let PICK_TPL = false;
+const TPL_MAX = 2621440;  // 2,5 MB, gelijk aan TPL_MAX_FILES op de server
+function tplsFor(mbId) {
+  const all = S.st.templates || [];
+  return { mine: all.filter(t => t.user_id), box: all.filter(t => t.mailbox_id === mbId), other: all.filter(t => t.mailbox_id && t.mailbox_id !== mbId) };
+}
+function replyWithTemplate(id) { PICK_TPL = true; doAct('reply', id); setTimeout(() => { PICK_TPL = false; }, 3000); }
+// Waarden voor de invulvelden: ontvanger uit de mail of het adresboek, ordergegevens uit Plakzicht (alleen lezen)
+async function tplValues(c) {
+  const to = (c.to || '').split(/[;,\s]+/).find(a => a.includes('@')) || '';
+  const m = S.mail && c.refId && String(S.mail.id) === String(c.refId) ? S.mail : null;
+  let name = '';
+  if (m && to && (m.from_addr || '').toLowerCase() === to.toLowerCase()) name = m.from_name || '';
+  if (!name && to) { try { const r = await api('address_book', to); const hit = r.find(x => (x.address || '').toLowerCase() === to.toLowerCase()); if (hit) name = hit.name || ''; } catch { /* zonder naam verder */ } }
+  if (name.includes('@') || name.toLowerCase() === to.toLowerCase()) name = '';
+  const mb = mailboxById(c.mb);
+  const v = { email: to, naam: name, voornaam: name.split(/\s+/)[0] || '', mijn_naam: S.st.user.name, mailbox: mb ? mb.address : '',
+    datum: new Date().toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' }) };
+  if (c.order) {
+    const r = await api('get_order', c.order).catch(() => null);
+    if (r && r.soort === 'order') Object.assign(v, { ordernummer: r.data.nr, klant: r.data.klant || '', orderstatus: stepsText(r.data.productie),
+      verzenddatum: r.data.due ? fmtDay(r.data.due) : '', track_trace: (r.data.verzending && r.data.verzending.track_url) || '' });
+    else if (r) Object.assign(v, { offertenummer: r.data.nr, offertestatus: r.data.status || '', klant: r.data.klant || '' });
+  }
+  // Is de naam van de afzender de bedrijfsnaam uit Plakzicht (bijv. 'Brouwerij De Hop'), dan is er geen voornaam: zelf invullen
+  if (v.klant && name && v.klant.toLowerCase() === name.toLowerCase()) v.voornaam = '';
+  return v;
+}
+const fieldName = k => (TPL_FIELDS.find(f => f[0] === k) || [k, k])[1];
+function fillText(txt, v) { return (txt || '').replace(/\{(\w+)\}/g, (all, k) => TPL_FIELDS.some(f => f[0] === k) ? (v[k] || `[${fieldName(k)}]`) : all); }
+// In de tekst (niet in de opmaak): bekend = invullen, onbekend = geel gemarkeerd om zelf in te vullen
+function fillHtml(html, v) {
+  const box = document.createElement('div'); box.innerHTML = sanitize(html);
+  const walk = document.createTreeWalker(box, NodeFilter.SHOW_TEXT), nodes = [];
+  while (walk.nextNode()) if (/\{\w+\}/.test(walk.currentNode.nodeValue)) nodes.push(walk.currentNode);
+  for (const n of nodes) {
+    const frag = document.createDocumentFragment();
+    n.nodeValue.split(/(\{\w+\})/).forEach(part => {
+      const k = (part.match(/^\{(\w+)\}$/) || [])[1];
+      if (!k || !TPL_FIELDS.some(f => f[0] === k)) { if (part) frag.append(part); return; }
+      if (v[k]) {
+        if (k === 'track_trace' && /^https?:\/\//.test(v[k]) && !n.parentElement.closest('a')) { const a = document.createElement('a'); a.href = v[k]; a.textContent = v[k]; frag.append(a); }
+        else frag.append(v[k]);
+      } else { const mk = document.createElement('mark'); mk.dataset.fill = k; mk.title = 'Nog invullen: ' + fieldName(k); mk.textContent = `[${fieldName(k)}]`; frag.append(mk); }
+    });
+    n.replaceWith(frag);
+  }
+  $$('a[href]', box).forEach(a => { a.setAttribute('href', fillText(a.getAttribute('href'), v).replace(/\[[^\]]*\]/g, '')); });
+  return box.innerHTML;
+}
+async function applyTemplate(t, c, ed, root) {
+  const v = await tplValues(c);
+  const html = fillHtml(t.html, v);
+  if (!ownText(ed)) { [...ed.childNodes].forEach(n => { if (!(n.nodeType === 1 && n.hasAttribute('data-sig'))) n.remove(); }); ed.insertAdjacentHTML('afterbegin', html + '<p><br></p>'); }
+  else {
+    let node = savedRange && ed.contains(savedRange.startContainer) ? savedRange.startContainer : null;
+    while (node && node.parentNode !== ed) node = node.parentNode;
+    if (node && node.hasAttribute && node.hasAttribute('data-sig')) node = node.previousSibling;
+    if (node) node.nodeType === 1 ? node.insertAdjacentHTML('afterend', html) : node.after(Object.assign(document.createElement('div'), { innerHTML: html }));
+    else { const sig = $('[data-sig]', ed); sig ? sig.insertAdjacentHTML('beforebegin', html) : ed.insertAdjacentHTML('beforeend', html); }
+  }
+  const subj = $('#c-subj', root);
+  if (t.subject && (!subj.value.trim() || (c.mode === 'new' && subj.value === c.subj0))) subj.value = fillText(t.subject, v);
+  if (t.files && t.files.length) {
+    c.files = c.files || [];
+    for (const f of t.files) if (!c.files.some(x => x.id === f.id)) c.files.push({ id: f.id, name: f.name, size: f.size });
+    renderCmpFiles(root);
+  }
+  touchDraft();
+  const open = $$('mark[data-fill]', ed).length;
+  toast(open ? `Sjabloon “${t.name}” ingevoegd. Vul de ${open === 1 ? 'gele plek' : open + ' gele plekken'} nog zelf in.` : `Sjabloon “${t.name}” ingevoegd. Lees de mail na voor je verstuurt.`);
+  const first = $('mark[data-fill]', ed);
+  if (first) { first.scrollIntoView({ block: 'center' }); ed.focus(); getSelection().selectAllChildren(first); }
+}
+function renderCmpFiles(root) {
+  const c = S.cmp, box = $('#c-files', root); if (!c || !box) return;
+  const fs = c.files || [];
+  $('#c-files-row', root).hidden = !fs.length;
+  box.innerHTML = fs.map(f => `<span class="fchip">${ICON.clip}<span class="ell">${esc(f.name)}</span><span class="note">${fmtSize(f.size)}</span><button type="button" class="x" data-rmf="${f.id}" aria-label="Bijlage ${esc(f.name)} weghalen">×</button></span>`).join('');
+  $$('[data-rmf]', box).forEach(b => b.onclick = () => { c.files = fs.filter(f => f.id !== +b.dataset.rmf); renderCmpFiles(root); touchDraft(); });
+}
+function tplPicker(c, ed, root) {
+  readCompose();
+  const keep = savedRange;
+  const g = tplsFor(+$('#c-from', root).value), mbv = mailboxById(+$('#c-from', root).value);
+  const row = t => `<button type="button" class="tplrow" data-t="${t.id}" data-q="${esc((t.name + ' ' + (t.subject || '') + ' ' + (t.html || '').replace(/<[^>]+>/g, ' ')).toLowerCase())}">
+    <b class="ell">${esc(t.name)}</b><span class="note ell">${esc(t.subject || (t.html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 90))}</span>${t.files && t.files.length ? `<span class="note">${ICON.clip} ${t.files.length}</span>` : ''}</button>`;
+  const sec = (title, list) => list.length ? `<h3 class="sub">${esc(title)}</h3>${list.map(row).join('')}` : '';
+  const any = g.mine.length + g.box.length;
+  return dialog(`<form class="tplpick"><h2>Sjabloon invoegen</h2>
+    ${any ? `<input name="q" type="search" placeholder="Zoek een sjabloon" autocomplete="off" style="width:100%">` : ''}
+    <div class="results" id="tplres">${sec('Mijn sjablonen', g.mine)}${sec(mbv ? mbv.address : 'Mailbox', g.box)}
+      ${any ? '' : `<div class="empty">Nog geen sjablonen${mbv ? ' voor ' + esc(mbv.address) : ''}. Maak er een via <b>Sjablonen beheren</b> of sla deze tekst op als sjabloon.</div>`}</div>
+    <p class="note">Ingevoegd op de plek van de cursor, boven je handtekening. Je ziet de mail altijd eerst; versturen doe je zelf.</p>
+    <div class="dlgbtns"><button type="button" class="btn" id="tpl-save">Deze tekst opslaan als sjabloon…</button><button type="button" class="btn" id="tpl-manage">Sjablonen beheren</button><button type="button" class="btn" data-cancel>Sluiten</button></div></form>`, (d, done) => {
+    const inp = $('[name=q]', d);
+    const filter = () => { const q = (inp.value || '').toLowerCase().trim(); $$('.tplrow', d).forEach(b => { b.hidden = !!q && !b.dataset.q.includes(q); }); $$('h3.sub', d).forEach(h => { let n = h.nextElementSibling, vis = false; while (n && n.classList.contains('tplrow')) { vis = vis || !n.hidden; n = n.nextElementSibling; } h.hidden = !vis; }); };
+    if (inp) { inp.oninput = filter; inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const b = $$('.tplrow', d).find(x => !x.hidden); if (b) b.click(); } }; if (!isTouchUI()) setTimeout(() => inp.focus(), 30); }
+    $$('.tplrow', d).forEach(b => b.onclick = () => { done(null); savedRange = keep; const t = (S.st.templates || []).find(x => x.id === +b.dataset.t); if (t) applyTemplate(t, c, ed, root); });
+    $('#tpl-manage', d).onclick = () => { done(null); stashOrKeep(); openMySettings(undefined, 'tpl'); };
+    $('#tpl-save', d).onclick = () => { done(null); saveAsTemplate(c, ed); };
+  });
+}
+function stashOrKeep() { if (S.cmp) { readCompose(); DRAFTS[S.cmp.key] = { ...S.cmp, full: false }; saveDrafts(); } }
+async function saveAsTemplate(c, ed) {
+  const t = ed.cloneNode(true); $$('[data-sig], .aiwait', t).forEach(n => n.remove());
+  if (!t.innerText.trim()) return toast('Schrijf eerst de tekst die je als sjabloon wilt bewaren.');
+  const mbs = S.st.mailboxes;
+  const f = await dialog(`<form><h2>Opslaan als sjabloon</h2>
+    <label>Naam<input name="name" required maxlength="120" placeholder="Bijvoorbeeld: Drukproef goedkeuren"></label>
+    <label>Voor<select name="scope"><option value="me">Alleen ik</option>${mbs.map(m => `<option value="${m.id}">Iedereen met ${esc(m.address)}</option>`).join('')}</select></label>
+    <p class="note">De tekst wordt opgeslagen zonder handtekening. Invulvelden zoals <span class="mono">{voornaam}</span> en bijlagen voeg je toe in <i>Mijn instellingen › Sjablonen</i>.</p>
+    <div class="dlgbtns"><button type="button" class="btn" data-cancel>Annuleren</button><button class="btn primary">Opslaan</button></div></form>`);
+  if (!f) return;
+  await run(async () => {
+    const subj = c.mode === 'new' ? ($('#c-subj') || {}).value || '' : '';
+    await api('save_template', { name: f.get('name'), scope: f.get('scope') === 'me' ? 'me' : +f.get('scope'), subject: subj, html: sanitize(t.innerHTML), files: [] });
+    await refreshState(); toast('Sjabloon opgeslagen');
+  });
+}
+function tplEditor(root, t, opts) {
+  // opts: { mailboxes, mine (mag 'Alleen ik' kiezen), onSaved, onDeleted }
+  const files = (t && t.files ? t.files : []).map(f => ({ ...f }));
+  const scope = t ? (t.user_id ? 'me' : String(t.mailbox_id)) : (opts.mine ? 'me' : String((opts.mailboxes[0] || {}).id || ''));
+  const ro = t && t.id && t.can_edit === false;
+  root.innerHTML = `<div class="form tplform"><h2>${t && t.id ? (ro ? 'Sjabloon bekijken' : 'Sjabloon wijzigen') : 'Nieuw sjabloon'}</h2>
+    <label>Naam<input id="t-name" maxlength="120" value="${esc(t ? t.name : '')}" placeholder="Bijvoorbeeld: Drukproef goedkeuren" ${ro ? 'disabled' : ''}></label>
+    <label>Voor<select id="t-scope" ${ro ? 'disabled' : ''}>${opts.mine ? `<option value="me" ${scope === 'me' ? 'selected' : ''}>Alleen ik</option>` : ''}
+      ${opts.mailboxes.map(m => `<option value="${m.id}" ${scope === String(m.id) ? 'selected' : ''}>Iedereen met ${esc(m.address)}</option>`).join('')}</select></label>
+    <label>Onderwerp <span class="note">(bij een nieuwe mail; bij beantwoorden blijft het onderwerp staan)</span><input id="t-subj" maxlength="300" value="${esc(t ? t.subject || '' : '')}" ${ro ? 'disabled' : ''}></label>
+    <div><div class="muted" style="font-size:12px;margin-bottom:4px">Invulvelden: klik om in te voegen op de plek van de cursor</div>
+      <div class="tplfields">${TPL_FIELDS.map(([k, n]) => `<button type="button" class="pill small" data-fld="${k}" title="${esc(n + ' ' + (TPL_HELP[k] || ''))}" ${ro ? 'disabled' : ''}>${esc(n)}</button>`).join('')}</div></div>
+    <div style="border:1px solid var(--line);border-radius:8px;overflow:hidden">${toolbarHtml(false)}<div class="sigedit tpledit" id="t-edit" contenteditable="${ro ? 'false' : 'true'}">${t && t.html ? sanitize(t.html) : '<p>Beste {voornaam},</p><p><br></p><p>Met vriendelijke groet,</p>'}</div></div>
+    <p class="note">Wat niet automatisch bekend is (bijvoorbeeld een ordernummer als de mail nog niet aan een order gekoppeld is), wordt bij het invoegen geel gemarkeerd om zelf in te vullen. Je handtekening komt er vanzelf onder.</p>
+    <div><div class="muted" style="font-size:12px;margin-bottom:4px">Bijlagen (samen hooguit 2,5 MB)</div><div class="cfiles" id="t-files"></div>
+      ${ro ? '' : `<label class="btn small" style="margin-top:6px">${ICON.clip} Bijlage toevoegen<input type="file" id="t-file" multiple hidden></label>`}</div>
+    ${t && t.updated_by ? `<p class="note">Laatst gewijzigd door ${esc(t.updated_by)} · ${esc(fmtDate(new Date(t.updated * 1000).toISOString(), true))}</p>` : ''}
+    ${ro ? '<p class="note">Je kunt dit sjabloon gebruiken maar niet wijzigen.</p>' : `<div class="row"><button class="btn primary" id="t-save">Opslaan</button>${t && t.id ? `<button class="btn danger" id="t-del">Verwijderen</button>` : ''}</div>`}</div>`;
+  if (ro) { renderFiles(); return; }
+  wireToolbar(root, '#t-edit');
+  let lastField = $('#t-edit', root);
+  $('#t-subj', root).addEventListener('focus', () => { lastField = $('#t-subj', root); });
+  $('#t-edit', root).addEventListener('focus', () => { lastField = $('#t-edit', root); });
+  $$('[data-fld]', root).forEach(b => b.onmousedown = e => e.preventDefault());
+  $$('[data-fld]', root).forEach(b => b.onclick = () => {
+    const tok = '{' + b.dataset.fld + '}';
+    if (lastField.id === 't-subj') { const i = lastField, a = i.selectionStart ?? i.value.length; i.value = i.value.slice(0, a) + tok + i.value.slice(i.selectionEnd ?? a); i.focus(); i.setSelectionRange(a + tok.length, a + tok.length); return; }
+    const ed = $('#t-edit', root); ed.focus();
+    if (savedRange && ed.contains(savedRange.startContainer)) { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(savedRange); }
+    document.execCommand('insertText', false, tok);
+  });
+  function renderFiles() {
+    const box = $('#t-files', root), total = files.reduce((n, f) => n + (f.size || 0), 0);
+    box.innerHTML = files.length ? files.map((f, i) => `<span class="fchip">${ICON.clip}<span class="ell">${esc(f.name)}</span><span class="note">${fmtSize(f.size)}</span>${ro ? '' : `<button type="button" class="x" data-rm="${i}" aria-label="Bijlage ${esc(f.name)} weghalen">×</button>`}</span>`).join('') + `<span class="note">${fmtSize(total)} van 2,5 MB</span>` : '<span class="note">Geen bijlagen</span>';
+    $$('[data-rm]', box).forEach(b => b.onclick = () => { files.splice(+b.dataset.rm, 1); renderFiles(); });
+  }
+  renderFiles();
+  $('#t-file', root).onchange = async e => {
+    for (const file of e.target.files) {
+      if (files.reduce((n, f) => n + f.size, 0) + file.size > TPL_MAX) { toast(`“${file.name}” past er niet meer bij: samen hooguit 2,5 MB.`); continue; }
+      const data = await new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.readAsDataURL(file); });
+      files.push({ name: file.name, ctype: file.type || 'application/octet-stream', size: file.size, data });
+    }
+    e.target.value = ''; renderFiles();
+  };
+  $('#t-save', root).onclick = () => run(async () => {
+    const sc = $('#t-scope', root).value;
+    const id = await api('save_template', { id: t && t.id, name: $('#t-name', root).value, scope: sc === 'me' ? 'me' : +sc, subject: $('#t-subj', root).value,
+      html: sanitize($('#t-edit', root).innerHTML), files: files.map(f => f.id ? { id: f.id } : { name: f.name, ctype: f.ctype, data: f.data }) });
+    toast('Sjabloon opgeslagen'); await refreshState(); opts.onSaved(id);
+  });
+  if ($('#t-del', root)) $('#t-del', root).onclick = async () => {
+    const ok = await dialog(`<form><h2>Sjabloon “${esc(t.name)}” verwijderen?</h2>${t.mailbox_id ? `<p class="muted">Het verdwijnt voor iedereen met ${esc((mailboxById(t.mailbox_id) || {}).address || 'deze mailbox')}.</p>` : ''}<div class="dlgbtns"><button type="button" class="btn" data-cancel>Annuleren</button><button class="btn primary">Verwijderen</button></div></form>`);
+    if (ok) run(async () => { await api('delete_template', t.id); await refreshState(); toast('Verwijderd'); opts.onDeleted(); });
+  };
+}
+function tplList(list, groups) {
+  return groups.map(([key, label]) => { const l = list.filter(t => key === 'me' ? t.user_id : t.mailbox_id === key); return l.length ? `<h3 class="sub">${esc(label)}</h3>
+    ${l.map(x => `<div class="kv"><button class="linkish" data-t="${x.id}">${esc(x.name)}</button><span class="muted tplclip">${x.files && x.files.length ? ICON.clip + ' ' + x.files.length : ''}</span></div>`).join('')}` : ''; }).join('');
+}
+function myTpls(editId) {
+  const all = S.st.templates || [];
+  const t = editId === undefined || editId === null ? null : all.find(x => x.id === +editId) || null;
+  const groups = [['me', 'Alleen voor mij'], ...S.st.mailboxes.map(m => [m.id, m.address])];
+  $('#mybody').innerHTML = `<div class="grid2"><div class="panel" id="t-box"></div>
+    <div class="panel"><h2>Sjablonen</h2>${tplList(all, groups) || '<p class="note">Nog geen sjablonen.</p>'}
+      <button class="btn" id="t-new">+ Nieuw sjabloon</button>
+      <p class="note">Een sjabloon voeg je in met de knop <b>Sjabloon</b> in een nieuwe mail of antwoord, of met de rechtermuisknop op een mail › <i>Beantwoorden met sjabloon</i> (telefoon: lang drukken). Sjablonen van een mailbox kan iedereen met toegang tot die mailbox gebruiken en wijzigen; die van jezelf ziet alleen jij.</p></div></div>`;
+  tplEditor($('#t-box'), t, { mailboxes: S.st.mailboxes, mine: true, onSaved: id => myTpls(id), onDeleted: () => myTpls() });
+  $$('#mybody [data-t]').forEach(b => b.onclick = () => myTpls(+b.dataset.t));
+  $('#t-new').onclick = () => myTpls(null);
+}
+async function admTpls(edit) {
+  const all = (await api('templates')).filter(t => t.mailbox_id);
+  const t = edit ? all.find(x => x.id === edit) || null : null;
+  $('#admbody').innerHTML = `<div class="grid2"><div class="panel" id="t-box"></div>
+    <div class="panel"><h2>Sjablonen per mailbox</h2>${tplList(all, ADM.mailboxes.map(m => [m.id, m.address])) || '<p class="note">Nog geen sjablonen voor een mailbox.</p>'}
+      <button class="btn" id="t-new">+ Nieuw sjabloon</button>
+      <p class="note">Iedereen met toegang tot een mailbox kan de sjablonen van die mailbox gebruiken en wijzigen. Eigen sjablonen van gebruikers staan hier niet; die maakt iedereen zelf via zijn naam rechtsboven › Mijn instellingen › Sjablonen.</p></div></div>`;
+  tplEditor($('#t-box'), t, { mailboxes: ADM.mailboxes, mine: false, onSaved: id => admTpls(id), onDeleted: () => admTpls() });
+  $$('#admbody [data-t]').forEach(b => b.onclick = () => admTpls(+b.dataset.t));
+  $('#t-new').onclick = () => admTpls();
+}
 async function sendCompose() {
   const c = S.cmp; if (!c) return;
+  readCompose();
+  const open = [...$$('#editor mark[data-fill]')].filter(m => /^\[.*\]$/.test(m.textContent.trim())).length + (TPL_FIELDS.some(([, n]) => (c.subj || '').includes('[' + n + ']')) ? 1 : 0);
+  if (open) {
+    const go = await dialog(`<form><h2>Nog niet alles ingevuld</h2><p>Er ${open === 1 ? 'staat nog 1 veld' : `staan nog ${open} velden`} uit het sjabloon die niet automatisch ingevuld konden worden (geel gemarkeerd, bijvoorbeeld <b>[Ordernummer]</b>).</p>
+      <div class="dlgbtns"><button type="button" class="btn primary" data-cancel>Terug en invullen</button><button class="btn">Toch versturen</button></div></form>`);
+    if (!go) { const m = $('#editor mark[data-fill]'); if (m) { m.scrollIntoView({ block: 'center' }); getSelection().selectAllChildren(m); } return; }
+  }
+  $$('#editor mark[data-fill]').forEach(m => m.replaceWith(...m.childNodes));  // markering niet meesturen
   readCompose();
   const own = sanitize($('#editor').innerHTML.replace(/<div data-sig="">/g, '<div>'));
   const body = own + (c.quote ? '<br>' + c.quote : '');
   const btn = $('.cmp [data-c=send]'); if (btn) btn.disabled = true;
   const ok = await run(async () => {
-    await api('send_mail', { mailbox_id: c.mb, to: c.to, cc: c.cc, subject: c.subj, body, order_nr: c.order, reply_to: c.refId, mode: c.mode });
+    await api('send_mail', { mailbox_id: c.mb, to: c.to, cc: c.cc, subject: c.subj, body, order_nr: c.order, reply_to: c.refId, mode: c.mode,
+      template_files: (c.files || []).map(f => f.id) });
     return true;
   });
   if (!ok) { if (btn) btn.disabled = false; return; }
@@ -2936,7 +3223,7 @@ async function openAdmin(tab) {
   admTab = tab || admTab;
   await run(async () => {
     ADM = await api('admin_data');
-    const tabs = [['users', 'Gebruikers'], ['mailboxes', 'Microsoft-mailboxen'], ['labels', 'Labels'], ['sigs', 'Handtekeningen'], ['detect', 'Herkenning en Plakzicht'], ['ms', 'Microsoft-koppeling'], ['claude', 'Claude'], ['server', 'Server en back-up']];
+    const tabs = [['users', 'Gebruikers'], ['mailboxes', 'Microsoft-mailboxen'], ['labels', 'Labels'], ['sigs', 'Handtekeningen'], ['tpls', 'Sjablonen'], ['detect', 'Herkenning en Plakzicht'], ['ms', 'Microsoft-koppeling'], ['claude', 'Claude'], ['server', 'Server en back-up']];
     const ov = $('#overlay');
     ov.innerHTML = `<div class="ohead"><button class="btn" data-close>← Terug naar mail</button><h1>Beheer</h1></div>
       <div class="tabs">${tabs.map(([k, n]) => `<button class="pill ${admTab === k ? 'on' : ''}" data-tab="${k}">${n}</button>`).join('')}</div>
@@ -2949,7 +3236,7 @@ async function openAdmin(tab) {
       renderSide(); await loadList(); renderRibbon();
     };
     $$('[data-tab]', ov).forEach(b => b.onclick = () => openAdmin(b.dataset.tab));
-    await ({ users: admUsers, mailboxes: admMailboxes, labels: admLabels, sigs: admSigs, detect: admDetect, ms: admMs, claude: admClaude, server: admServer })[admTab]();
+    await ({ users: admUsers, mailboxes: admMailboxes, labels: admLabels, sigs: admSigs, tpls: admTpls, detect: admDetect, ms: admMs, claude: admClaude, server: admServer })[admTab]();
   });
 }
 $('#btn-admin').onclick = () => openAdmin('users');
@@ -3104,14 +3391,14 @@ let mySec = 'view';
 async function openMySettings(editId, section) {
   if (section) mySec = section;
   await run(async () => { await refreshState(); });
-  const secs = [['view', 'Weergave'], ['notify', 'Meldingen'], ['qs', 'Snelle stappen'], ['claude', 'Claude'], ['sig', 'Handtekeningen'], ['pw', 'Wachtwoord'], ['dev', 'Apparaten'], ['mob', 'Mobiel']];
+  const secs = [['view', 'Weergave'], ['notify', 'Meldingen'], ['qs', 'Snelle stappen'], ['claude', 'Claude'], ['sig', 'Handtekeningen'], ['tpl', 'Sjablonen'], ['pw', 'Wachtwoord'], ['dev', 'Apparaten'], ['mob', 'Mobiel']];
   const ov = $('#overlay');
   ov.innerHTML = `<div class="ohead"><button class="btn" data-close>← Terug naar mail</button><h1>Mijn instellingen</h1><span class="note">${esc(S.st.user.name)} · ${esc(S.st.user.username)}</span></div>
     <div class="tabs">${secs.map(([k, n]) => `<button class="pill ${mySec === k ? 'on' : ''}" data-sec="${k}">${n}</button>`).join('')}</div><div id="mybody"></div>`;
   ov.hidden = false;
   $('[data-close]', ov).onclick = () => { closeOverlay(); renderList(); renderRibbon(); };
   $$('[data-sec]', ov).forEach(b => b.onclick = () => openMySettings(undefined, b.dataset.sec));
-  ({ view: myView, notify: myNotify, qs: myQuicksteps, claude: myClaude, sig: () => mySigs(editId), pw: myPw, dev: myDevices, mob: myMobile })[mySec](editId);
+  ({ view: myView, notify: myNotify, qs: myQuicksteps, claude: myClaude, sig: () => mySigs(editId), tpl: () => myTpls(editId), pw: myPw, dev: myDevices, mob: myMobile })[mySec](editId);
 }
 function myView() {
   const p = P();
@@ -3133,7 +3420,11 @@ function myView() {
       <p class="note">Ongelezen, totaal, beide of geen. Ook te kiezen met de rechtermuisknop op een map (telefoon: lang drukken).</p>
       ${S.st.mailboxes.map(mb => `<div class="cntmb"><b>${esc(mb.display)}</b>${mb.folders.map(f => `<label class="cntrow" style="--d:${f.depth || 0}">
         <span class="ell">${folderIcon(f)} ${esc(f.name)}</span><select data-cnt="${mb.id}|${esc(f.id)}">${Object.entries(CNT_NAMES).map(([k, n]) => `<option value="${k}" ${cntMode(mb.id, f) === k ? 'selected' : ''}>${n}${k !== 'none' ? ' · ' + esc(cntText(k, f, true)) : ''}</option>`).join('')}</select></label>`).join('')}</div>`).join('')}</div>
-      <div class="panel"><h2>Bewaard per gebruiker</h2><p class="note">Deze instellingen staan op de server bij jouw naam, dus je hebt ze op elke pc waar je inlogt. Ook je sortering, gekozen kolommen en kolombreedtes worden bewaard.</p></div></div></div>`;
+      <div class="panel"><h2>Kolombreedtes <small>per scherm</small></h2>
+        <p class="note">De breedtes van de zijbalk, de maillijst, het Plakzicht-paneel en de kolommen in de lijst worden bewaard per scherm (dit scherm: <b>${esc(S.screen.replace('x', ' × '))}</b>). Is het venster smaller, dan past alles zich aan zonder dat je instelling verloren gaat. Op een nieuw scherm begin je met de breedtes van het scherm dat er het meest op lijkt.</p>
+        <button class="btn" type="button" id="w-reset">Kolombreedtes op dit scherm herstellen</button></div>
+      <div class="panel"><h2>Bewaard per gebruiker</h2><p class="note">Deze instellingen staan op de server bij jouw naam, dus je hebt ze op elke pc waar je inlogt. Ook je sortering en gekozen kolommen worden bewaard.</p></div></div></div>`;
+  $('#w-reset').onclick = () => { resetWidths(); toast('Kolombreedtes op dit scherm hersteld'); };
   $$('#mybody [data-cnt]').forEach(sel => sel.onchange = () => { const [mb, fid] = sel.dataset.cnt.split(/\|(.*)/s); setCounter(+mb, fid, sel.value); toast('Opgeslagen'); });
   $$('#vform input').forEach(i => i.onchange = () => {
     const f = new FormData($('#vform'));
@@ -3553,7 +3844,7 @@ async function applyEvents() {
     if (S.popout) { if (selChanged && sel) await openMail(sel, true); return; }
     await refreshState(); await loadList();
     if (sel && S.sel === sel) {
-      if (!S.mails.some(m => m.id === sel)) {
+      if (!S.mails.some(m => String(m.id) === String(sel))) {
         if (by !== S.st.user.id) toast('Deze mail is intussen door een collega verplaatst of verwijderd.');
         S.sel = null; S.mail = null; setPresence(null); renderReader(); renderPz();
       } else if (selChanged) { await openMail(sel, true); }
@@ -3585,8 +3876,7 @@ async function startPopout(id) {
   S.st = st;
   $('#login').hidden = true; $('#app').hidden = false;
   setDensity(st.user.density, false);
-  S.layout = { ...LAYOUT_DEFAULT, ...(st.user.layout || {}) };
-  applyLayout();
+  loadLayout(st.user.layout);
   loadDrafts();
   await openMail(id);
   renderRibbon();

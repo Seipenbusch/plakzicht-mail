@@ -38,6 +38,7 @@ Plakzicht Mail werkt in de browser van je telefoon en past zich vanzelf aan: op 
 | Aantal mails | onderin de lijst; bij een selectie staat er hoeveel je hebt geselecteerd |
 | Favorieten | in het mappenmenu **lang drukken** op een map, mailbox of label › *Toevoegen aan favorieten*; ze staan dan bovenin |
 | Link in een mail | tik erop: opent in de browser; een e-mailadres opent een nieuwe mail |
+| Sjabloon gebruiken | in het opstelscherm de knop met het documentje (naast de prullenbak); of **lang drukken** op een mail › *Beantwoorden met sjabloon*. Gele plekken vul je zelf in |
 
 **Vegen zelf kiezen:** *Mijn instellingen › Mobiel*. Per richting: niets, archiveren, verwijderen, gelezen/ongelezen,
 vlag, beantwoorden, oppakken, label kiezen of verplaatsen. De keuze geldt op al je telefoons en tablets.

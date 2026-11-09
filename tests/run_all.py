@@ -21,6 +21,8 @@ TESTS = [
     "test_weergave",
     "test_plakzicht_paneel",
     "test_favorieten_links",
+    "test_kolombreedtes",
+    "test_sjablonen",
 ]
 
 

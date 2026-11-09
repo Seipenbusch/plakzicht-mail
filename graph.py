@@ -448,7 +448,7 @@ class MsMail:
                 "Content-Range": f"bytes {start}-{start + len(chunk) - 1}/{len(data)}"})
             urllib.request.urlopen(rq, timeout=120).read()
 
-    def send(self, address, subject, html, to, cc):
+    def send(self, address, subject, html, to, cc, files=None):
         # Afbeeldingen die als data-URI in de tekst staan (bijv. logo in de handtekening) worden
         # inline-bijlagen; veel mailprogramma's tonen data-URI's anders niet.
         atts, n = [], 0
@@ -466,6 +466,9 @@ class MsMail:
         msg = {"subject": subject, "body": {"contentType": "HTML", "content": html}, "toRecipients": rcpt(to)}
         if rcpt(cc):
             msg["ccRecipients"] = rcpt(cc)
+        for f in files or []:  # bijlagen uit een sjabloon
+            atts.append({"@odata.type": "#microsoft.graph.fileAttachment", "name": f["name"], "contentType": f["ctype"] or "application/octet-stream",
+                         "contentBytes": base64.b64encode(f["data"]).decode()})
         if atts:
             msg["attachments"] = atts
         self.g.req("POST", f"{_u(address)}/sendMail", {"message": msg, "saveToSentItems": True})
