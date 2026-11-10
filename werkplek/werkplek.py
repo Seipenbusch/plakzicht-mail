@@ -193,9 +193,12 @@ class Bridge:
     """Functies die de pagina via window.pywebview.api mag aanroepen."""
 
     def __init__(self):
+        # Alles zonder '_' geeft pywebview door aan de pagina; het doorloopt daarvoor bij elke pagina alle eigenschappen.
+        # Het venster zelf hoort daar nooit bij: dat doorzoeken wacht op de pagina en de pagina op het doorzoeken,
+        # waardoor het venster vastliep. Daarom privé (_window) en de rest alleen tekst.
         self.base = None
         self.error = ""
-        self.window = None
+        self._window = None
 
     # -- instellscherm
     def current(self):
@@ -207,11 +210,11 @@ class Bridge:
         if not base:
             log("geen server bereikbaar")
             self.error = why
-            self.window.load_html(SETUP_HTML)
+            self._window.load_html(SETUP_HTML)
             return False
         log(f"verbonden via {why}: {base}")
         self.base, self.error = base, ""
-        self.window.load_url(base + "/index.html")
+        self._window.load_url(base + "/index.html")
         return True
 
     def open_log(self):
@@ -230,20 +233,20 @@ class Bridge:
         log(f"verbonden via {why}: {base}")
         self.base, self.error = base, ""
         try:
-            self.window.resize(1400, 880)
+            self._window.resize(1400, 880)
         except Exception:  # noqa: BLE001 - niet elk platform kan dat
             pass
-        self.window.load_url(base + "/index.html")
+        self._window.load_url(base + "/index.html")
         return {"ok": True}
 
     def back(self):
         if self.base:
-            self.window.load_url(self.base + "/index.html")
+            self._window.load_url(self.base + "/index.html")
         return True
 
     def client_settings(self):
         """Vanuit Plakzicht Mail: de serveradressen van deze app wijzigen."""
-        self.window.load_html(SETUP_HTML)
+        self._window.load_html(SETUP_HTML)
         return True
 
     def client_info(self):
@@ -292,7 +295,12 @@ def main():
     # Meteen een venster ('Verbinden met de server…'); het verbinden gebeurt daarna, zodat de app nooit lijkt vast te hangen.
     win = webview.create_window("Plakzicht Mail", html=LOADING_HTML if has else SETUP_HTML, js_api=bridge,
                                 width=1400 if has else 620, height=880 if has else 560, min_size=(420, 460))
-    bridge.window = win
+    bridge._window = win
+    try:  # in het logbestand: is de pagina echt geladen?
+        win.events.loaded += lambda *a: log("pagina geladen: " + str(win.get_current_url() or "")[:80])
+        win.events.closed += lambda *a: log("venster gesloten")
+    except Exception:  # noqa: BLE001 - oudere pywebview of nagebootst venster
+        pass
 
     def started():
         close_splash()

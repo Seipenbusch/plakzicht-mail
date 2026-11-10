@@ -916,3 +916,30 @@ body.tab .themebtn span { display: none; }
 .si.fav.favover { box-shadow: inset 0 2px 0 var(--brand); }
 .si.fav.favover.below { box-shadow: inset 0 -2px 0 var(--brand); }
 
+
+/* ---------- sjablonen */
+dialog:has(.tplpick) { width: min(580px, 94vw); }
+.tplpick .results { max-height: min(52vh, 420px); }
+.tplpick h3.sub { margin: 0; padding: 7px 10px 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); background: var(--soft); position: sticky; top: 0; }
+.tplpick .results .tplrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; align-items: baseline; padding: 8px 10px; }
+.tplrow b { font-size: 13.5px; }
+.tplrow .note { grid-column: 1; font-size: 12px; }
+.tplrow .note:last-child:not(:nth-child(2)) { grid-column: 2; grid-row: 1; display: inline-flex; align-items: center; gap: 3px; }
+.tplrow svg, .fchip svg { width: 13px; height: 13px; flex: none; }
+.tplpick .dlgbtns { flex-wrap: wrap; }
+.cfiles { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+.fchip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; font-size: 12.5px; padding: 3px 4px 3px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--soft); }
+.fchip .ell { max-width: 220px; }
+.fchip .x { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 15px; line-height: 1; padding: 0 4px; }
+.fchip .x:hover { color: var(--ink); }
+.tplfields { display: flex; flex-wrap: wrap; gap: 5px; }
+.pill.small { font-size: 11.5px; padding: 2px 9px; }
+.tpledit { min-height: 160px; }
+.editor mark[data-fill], .tpledit mark[data-fill] { background: #ffe58a; color: #3a2c00; border-radius: 3px; padding: 0 2px; }
+label.btn.small { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+label.btn.small svg { width: 14px; height: 14px; }
+@media (max-width: 760px) { .fchip .ell { max-width: 150px; } }
+.fchip .ell, .tplrow .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.fchip .note { white-space: nowrap; }
+.kv .tplclip { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.kv .tplclip svg { width: 13px; height: 13px; }

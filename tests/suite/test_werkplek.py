@@ -11,6 +11,8 @@ from helpers import ROOT, Server, free_port, ok, stop_all  # noqa: E402
 
 sys.path.insert(0, os.path.join(ROOT, "werkplek"))
 import werkplek as W  # noqa: E402
+import tempfile  # noqa: E402
+W.LOG = os.path.join(tempfile.mkdtemp(), "werkplek.log")  # nooit in de programmamap schrijven
 
 
 class Access(BaseHTTPRequestHandler):
@@ -88,10 +90,23 @@ try:
             pass
 
     b = W.Bridge()
-    b.window = Win()
+    b._window = Win()
     assert "error" in b.connect(dead, "")
-    assert b.connect(srv.base, "") == {"ok": True} and b.window.url == srv.base + "/index.html"
+    assert b.connect(srv.base, "") == {"ok": True} and b._window.url == srv.base + "/index.html"
     ok("instelscherm: verbinden opent Plakzicht Mail")
+
+    # pywebview doorloopt bij elke pagina alles van de brug zonder '_' (net als webview.util.inject_pywebview).
+    # Een venster of ander object daarin liet de app vastlopen: alleen functies en gewone waarden mogen zichtbaar zijn.
+    import inspect
+    sys.path.insert(0, ROOT)
+    import app as A  # noqa: E402
+    for brug in (b, W.Bridge(), A.DesktopBridge("http://x")):
+        for name in dir(brug):
+            if name.startswith("_"):
+                continue
+            attr = getattr(brug, name)
+            assert inspect.ismethod(attr) or attr is None or isinstance(attr, (str, int, float, bool)), (type(brug).__name__, name, type(attr))
+    ok("brug naar de pagina: geen venster of ander object dat pywebview doorzoekt (oorzaak van het vastlopen)")
 
     # opstarten met een nagebootst venster: meteen 'Verbinden…', daarna de server of het foutscherm, en een logbestand
     import types
@@ -110,21 +125,30 @@ try:
         def resize(self, w, h):
             pass
 
+        def get_current_url(self):
+            return (self.urls or [""])[-1]
+
+    class Ev(list):
+        def __iadd__(self, fn):
+            self.append(fn); return self
+
     fake = types.ModuleType("webview")
     fake.settings = {}
-    fake.create_window = lambda title, url=None, html=None, js_api=None, **kw: calls.append(FakeWin(html=html, url=url, **kw)) or calls[-1]
+    fake.create_window = lambda title, url=None, html=None, js_api=None, **kw: calls.append(FakeWin(html=html, url=url, **kw)) or setattr(calls[-1], 'events', types.SimpleNamespace(loaded=Ev(), closed=Ev())) or calls[-1]
     fake.start = lambda func=None, *a, **kw: func and func()
     sys.modules["webview"] = fake
     W.save_conf(srv.base.replace("127.0.0.1", "127.0.0.1"), "")
     W.main()
     win = calls[-1]
     assert win.kw["html"] == W.LOADING_HTML and win.urls == [srv.base + "/index.html"], (win.kw.get("html", "")[:40], win.urls)
+    for fn in win.events.loaded:
+        fn()
     W.save_conf(dead, "")
     W.main()
     win = calls[-1]
     assert win.kw["html"] == W.LOADING_HTML and win.htmls == [W.SETUP_HTML] and not win.urls
     logtxt = open(W.LOG, encoding="utf-8").read()
-    for want in ("start", "vensteronderdelen geladen", "venster zichtbaar", "verbonden via lokaal", "geen server bereikbaar"):
+    for want in ("start", "vensteronderdelen geladen", "venster zichtbaar", "verbonden via lokaal", "pagina geladen: " + srv.base, "geen server bereikbaar"):
         assert want in logtxt, want
     ok("opstarten: meteen een venster met 'Verbinden…', daarna de server of het foutscherm; tijden in werkplek.log")
 

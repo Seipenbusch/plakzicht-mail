@@ -70,6 +70,26 @@ DEFAULT_SETTINGS = {
 _lock = threading.Lock()
 LIST_COLS = ("imp", "rem", "type", "att", "from", "subj", "date", "size", "cats", "mention", "flag", "order", "claim", "mailbox")
 SORT_KEYS = ("date", "from", "to", "subject", "size", "importance", "due", "read", "att", "cats", "mention", "flag", "order", "claim", "mailbox")
+TPL_MAX_FILES = 2_621_440  # 2,5 MB bijlagen per sjabloon/mail; Microsoft verstuurt in één keer tot 4 MB (base64 maakt het ⅓ groter)
+
+
+def _clean_html(html):
+    """Geen scripts of onclick-achtige attributen opslaan (de interface schoont bij tonen ook nog op)."""
+    html = re.sub(r"<script[\s\S]*?</script>", "", html, flags=re.I)
+    html = re.sub(r"\son\w+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", "", html, flags=re.I)
+    return re.sub(r"(href|src)\s*=\s*([\"'])\s*javascript:[^\"']*\2", r'\1=\2#\2', html, flags=re.I)
+
+
+LAYOUT_LIMITS = {"side": (160, 360), "list": (240, 1400), "pz": (220, 520)}  # gelijk aan LIMITS in ui/app.js
+SCREEN_RE = re.compile(r"^\d{3,5}x\d{3,5}$")
+MAX_SCREENS = 12
+
+
+def _clamp_w(key, v):
+    lo, hi = LAYOUT_LIMITS[key]
+    return int(min(hi, max(lo, v)))
+
+
 DEFAULT_PREFS = {
     "listview": "kolommen", "groups": True, "reply_in": "pane",
     "cols": ["imp", "rem", "type", "att", "from", "subj", "date", "size", "cats", "mention", "flag"],
@@ -446,6 +466,14 @@ CREATE TABLE IF NOT EXISTS mail_labels(
 CREATE TABLE IF NOT EXISTS signatures(
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, html TEXT NOT NULL,
   mailbox_id INTEGER REFERENCES mailboxes(id) ON DELETE SET NULL);
+CREATE TABLE IF NOT EXISTS templates(
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, subject TEXT DEFAULT '', html TEXT NOT NULL,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,          -- eigen sjabloon van deze gebruiker
+  mailbox_id INTEGER REFERENCES mailboxes(id) ON DELETE CASCADE,   -- of: sjabloon van deze mailbox
+  updated REAL, updated_by TEXT);
+CREATE TABLE IF NOT EXISTS template_files(
+  id INTEGER PRIMARY KEY, template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, ctype TEXT, size INTEGER, data BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS remember(
   id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, hash TEXT NOT NULL,
@@ -1112,7 +1140,8 @@ class Api:
             s = _settings(c)
             qs = self._quicksteps(c, u)
             claude = self._claude_status(c, u)
-        return {"user": u, "mailboxes": mbs, "labels": labels, "signatures": sigs,
+            tpls = self._templates(c, u)
+        return {"user": u, "mailboxes": mbs, "labels": labels, "signatures": sigs, "templates": tpls,
                 "plakzicht_url": s["plakzicht_url"], "folders": [{"key": k, "name": n} for k, n in FOLDERS],
                 "mode": CFG["mode"], "periods": PERIODS, "quicksteps": qs, "claude": claude, "plakzicht_live": bool(pz_api())}
 
@@ -1125,16 +1154,44 @@ class Api:
         return density
 
     def set_layout(self, layout):
-        """Kolombreedtes en ingeklapte zijbalk, per gebruiker."""
-        clean = {}
-        for key, lo, hi in (("side", 160, 360), ("list", 240, 760), ("pz", 220, 520)):
-            v = layout.get(key)
-            if isinstance(v, (int, float)):
-                clean[key] = int(min(hi, max(lo, v)))
-        clean["collapsed"] = bool(layout.get("collapsed"))
-        clean["pz_hidden"] = bool(layout.get("pz_hidden"))
+        """Kolombreedtes per gebruiker en per scherm (schermresolutie, bijv. '1920x1080'), plus ingeklapte zijbalk en
+        verborgen Plakzicht-paneel. Wordt samengevoegd met wat er al stond: alleen wat meegestuurd wordt verandert.
+        {'screen': '1920x1080', 'widths': {'side':…, 'list':…, 'pz':…, 'colw': {…}}} slaat de breedtes van dat scherm op;
+        'widths': None wist ze (terug naar standaard op dat scherm)."""
+        layout = layout if isinstance(layout, dict) else {}
         with _lock, _conn() as c:
             u = self._user(c)
+            try:
+                cur = json.loads(c.execute("SELECT layout FROM users WHERE id=?", (u["id"],)).fetchone()[0] or "{}")
+            except (TypeError, ValueError):
+                cur = {}
+            clean = {k: v for k, v in cur.items() if k in ("collapsed", "pz_hidden", "screens") or k in LAYOUT_LIMITS}
+            for k in ("collapsed", "pz_hidden"):
+                if k in layout:
+                    clean[k] = bool(layout[k])
+            for k in LAYOUT_LIMITS:  # oude vorm (zonder scherm): blijft de startwaarde voor elk nieuw scherm
+                if isinstance(layout.get(k), (int, float)) and "screen" not in layout:
+                    clean[k] = _clamp_w(k, layout[k])
+            scr = layout.get("screen")
+            if isinstance(scr, str) and SCREEN_RE.match(scr):
+                screens = clean.get("screens") if isinstance(clean.get("screens"), dict) else {}
+                if layout.get("widths") is None and "widths" in layout:
+                    screens.pop(scr, None)
+                elif isinstance(layout.get("widths"), dict):
+                    w = layout["widths"]
+                    entry = dict(screens.get(scr) or {})
+                    for k in LAYOUT_LIMITS:
+                        if isinstance(w.get(k), (int, float)):
+                            entry[k] = _clamp_w(k, w[k])
+                    if isinstance(w.get("colw"), dict):
+                        entry["colw"] = {kk: int(min(600, max(18, vv))) for kk, vv in w["colw"].items()
+                                         if kk in LIST_COLS and isinstance(vv, (int, float))}
+                    entry["t"] = int(time.time())
+                    screens[scr] = entry
+                    if len(screens) > MAX_SCREENS:  # oudste scherm vervalt
+                        for old in sorted(screens, key=lambda x: screens[x].get("t", 0))[:len(screens) - MAX_SCREENS]:
+                            screens.pop(old)
+                clean["screens"] = screens
             c.execute("UPDATE users SET layout=? WHERE id=?", (json.dumps(clean), u["id"]))
         return clean
 
@@ -1493,6 +1550,9 @@ class Api:
             if mb not in self._mb_ids(c, u):
                 raise PermissionError("Geen toegang tot die mailbox.")
             box = c.execute("SELECT * FROM mailboxes WHERE id=?", (mb,)).fetchone()
+            files = self._template_files(c, u, msg.get("template_files"))
+            if files:  # demo: geen echte bijlagen, wel zichtbaar wat er mee zou gaan
+                msg = {**msg, "body": (msg.get("body") or "") + "<p><i>Bijlagen: " + ", ".join(html.escape(f["name"]) for f in files) + "</i></p>"}
             order = (msg.get("order_nr") or "").strip().upper() or None
             mode = "manual" if order else "auto"
             cur = c.execute(
@@ -1929,8 +1989,10 @@ class Api:
         if not (msg.get("to") or "").strip():
             raise ValueError("Vul een ontvanger in.")
         with _conn() as c:
-            mb = self._mb(c, self._user(c), msg["mailbox_id"])
-        self._ms_call(lambda: self._ms_for(mb).send(mb["address"], msg.get("subject", ""), msg.get("body", ""), msg.get("to"), msg.get("cc")))
+            u = self._user(c)
+            mb = self._mb(c, u, msg["mailbox_id"])
+            files = self._template_files(c, u, msg.get("template_files"))
+        self._ms_call(lambda: self._ms_for(mb).send(mb["address"], msg.get("subject", ""), msg.get("body", ""), msg.get("to"), msg.get("cc"), files))
         sent = next((f["id"] for f in CACHE.folders(mb["id"]) if f["wk"] == "sent"), None)
         CACHE.kick(mb["id"], sent)
         return True
@@ -2505,6 +2567,115 @@ class Api:
                 raise PermissionError("Je kunt alleen je eigen handtekeningen verwijderen.")
             c.execute("DELETE FROM signatures WHERE id=?", (int(sid),))
         return True
+
+    # -- sjablonen: eigen (alleen jij) of van een mailbox (iedereen met toegang tot die mailbox)
+    def _tpl_edit_ok(self, c, u, t):
+        """Wie mag dit sjabloon wijzigen: eigen sjabloon de eigenaar; mailbox-sjabloon iedereen met toegang tot de
+        mailbox (en de beheerder). Hier kan later een apart recht 'sjablonen beheren' bij."""
+        if t["user_id"]:
+            return t["user_id"] == u["id"]
+        return t["mailbox_id"] in self._mb_ids(c, u)
+
+    def _templates(self, c, u):
+        mbs = self._mb_ids(c, u)
+        q = ",".join("?" * len(mbs)) or "NULL"
+        rows = _rows(c.execute(f"SELECT * FROM templates WHERE user_id=? OR mailbox_id IN ({q}) ORDER BY user_id IS NULL, lower(name)", (u["id"], *mbs)))
+        for t in rows:
+            t["files"] = _rows(c.execute("SELECT id,name,ctype,size FROM template_files WHERE template_id=? ORDER BY id", (t["id"],)))
+            t["can_edit"] = self._tpl_edit_ok(c, u, t)
+        return rows
+
+    def templates(self):
+        with _conn() as c:
+            return self._templates(c, self._user(c))
+
+    def save_template(self, data):
+        """data: id?, name, subject, html, scope ('me' of een mailbox-id), files: [{id} (bestaand houden) of
+        {name, ctype, data (base64)}]. Bijlagen samen hooguit TPL_MAX_FILES bytes (Microsoft verstuurt tot ± 4 MB per mail)."""
+        name = (data.get("name") or "").strip()[:120]
+        if not name:
+            raise ValueError("Geef het sjabloon een naam.")
+        html = data.get("html") or ""
+        if len(html) > 2_000_000:
+            raise ValueError("Het sjabloon is te groot; gebruik een kleinere afbeelding.")
+        html = _clean_html(html)
+        subject = (data.get("subject") or "").strip()[:300]
+        scope = data.get("scope")
+        files = data.get("files") or []
+        if not isinstance(files, list) or len(files) > 10:
+            raise ValueError("Hooguit 10 bijlagen per sjabloon.")
+        with _lock, _conn() as c:
+            u = self._user(c)
+            if scope == "me":
+                owner, mb = u["id"], None
+            else:
+                owner, mb = None, int(scope or 0)
+                if mb not in self._mb_ids(c, u):
+                    raise PermissionError("Geen toegang tot die mailbox.")
+            keep, new = [], []
+            for f in files:
+                if isinstance(f, dict) and f.get("id"):
+                    keep.append(int(f["id"]))
+                elif isinstance(f, dict) and f.get("data"):
+                    try:
+                        raw = base64.b64decode(f["data"], validate=True)
+                    except (ValueError, TypeError):
+                        raise ValueError("Een bijlage kon niet gelezen worden.") from None
+                    fname = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", (f.get("name") or "bijlage").strip())[:150] or "bijlage"
+                    ctype = f.get("ctype") if re.match(r"^[\w.+-]+/[\w.+-]+$", f.get("ctype") or "") else "application/octet-stream"
+                    new.append((fname, ctype, raw))
+            if data.get("id"):
+                tid = int(data["id"])
+                old = c.execute("SELECT * FROM templates WHERE id=?", (tid,)).fetchone()
+                if not old or not self._tpl_edit_ok(c, u, old):
+                    raise PermissionError("Dit sjabloon mag je niet wijzigen.")
+                have = {r[0]: r[1] for r in c.execute("SELECT id,size FROM template_files WHERE template_id=?", (tid,))}
+                keep = [k for k in keep if k in have]
+                total = sum(have[k] for k in keep) + sum(len(x[2]) for x in new)
+            else:
+                tid, have, keep = None, {}, []
+                total = sum(len(x[2]) for x in new)
+            if total > TPL_MAX_FILES:
+                raise ValueError(f"De bijlagen zijn samen te groot (hooguit 2,5 MB per sjabloon).")
+            if tid:
+                c.execute("UPDATE templates SET name=?, subject=?, html=?, user_id=?, mailbox_id=?, updated=?, updated_by=? WHERE id=?",
+                          (name, subject, html, owner, mb, time.time(), u["name"], tid))
+                for k in have:
+                    if k not in keep:
+                        c.execute("DELETE FROM template_files WHERE id=?", (k,))
+            else:
+                tid = c.execute("INSERT INTO templates(name,subject,html,user_id,mailbox_id,updated,updated_by) VALUES(?,?,?,?,?,?,?)",
+                                (name, subject, html, owner, mb, time.time(), u["name"])).lastrowid
+            for fname, ctype, raw in new:
+                c.execute("INSERT INTO template_files(template_id,name,ctype,size,data) VALUES(?,?,?,?,?)", (tid, fname, ctype, len(raw), raw))
+        return tid
+
+    def delete_template(self, tid):
+        with _lock, _conn() as c:
+            u = self._user(c)
+            old = c.execute("SELECT * FROM templates WHERE id=?", (int(tid),)).fetchone()
+            if not old or not self._tpl_edit_ok(c, u, old):
+                raise PermissionError("Dit sjabloon mag je niet verwijderen.")
+            c.execute("DELETE FROM templates WHERE id=?", (int(tid),))
+        return True
+
+    def _template_files(self, c, u, ids):
+        """Bijlagen uit sjablonen voor een mail: alleen uit sjablonen die deze gebruiker mag gebruiken."""
+        if not ids:
+            return []
+        if not isinstance(ids, list) or len(ids) > 20:
+            raise ValueError("Te veel bijlagen.")
+        mbs = self._mb_ids(c, u)
+        out = []
+        for fid in dict.fromkeys(int(x) for x in ids):
+            r = c.execute("SELECT f.name, f.ctype, f.data, t.user_id, t.mailbox_id FROM template_files f JOIN templates t ON t.id=f.template_id "
+                          "WHERE f.id=?", (fid,)).fetchone()
+            if not r or not (r["user_id"] == u["id"] or (r["mailbox_id"] and r["mailbox_id"] in mbs)):
+                raise PermissionError("Een bijlage uit een sjabloon is niet (meer) beschikbaar.")
+            out.append({"name": r["name"], "ctype": r["ctype"], "data": bytes(r["data"])})
+        if sum(len(x["data"]) for x in out) > TPL_MAX_FILES:
+            raise ValueError(f"De bijlagen zijn samen te groot (hooguit 2,5 MB per mail).")
+        return out
 
     def change_password(self, old, new):
         if len(new or "") < 8:
