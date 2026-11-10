@@ -943,3 +943,49 @@ label.btn.small svg { width: 14px; height: 14px; }
 .fchip .note { white-space: nowrap; }
 .kv .tplclip { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
 .kv .tplclip svg { width: 13px; height: 13px; }
+
+/* ---------- handleiding */
+.helpov { z-index: 30; }
+body.mob .helpov { z-index: 36; }
+.helpov .ohead #h-q { flex: 1 1 320px; min-width: 0; max-width: 620px; font-size: 15px; padding: 9px 12px; }
+.helpgrid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 14px; align-items: start; }
+.helpnav { position: sticky; top: 64px; max-height: calc(100vh - 140px); overflow: auto; padding: 8px; }
+.helpnav .hcat { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 10px 8px 4px; }
+.helpnav .hcat:first-child { padding-top: 4px; }
+.helpnav .hcat .note { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.helpnav .hlink, .helpnav .hres { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 7px; padding: 6px 8px; cursor: pointer; color: var(--ink); font: inherit; font-size: 13.5px; }
+.helpnav .hlink:hover, .helpnav .hres:hover { background: var(--soft); }
+.helpnav .hlink.on, .helpnav .hres.on { background: var(--sel, var(--soft)); font-weight: 600; }
+.helpnav .hlink.add { color: var(--brand); }
+.helpnav .hres { padding: 8px; display: grid; gap: 2px; }
+.helpnav .hres .note { font-size: 12px; line-height: 1.35; font-weight: 400; }
+.helpnav .hhead { font-size: 12.5px; color: var(--muted); padding: 4px 8px 6px; }
+.helpart { padding: 18px 24px 22px; max-width: 820px; }
+.helpart h2 { font-size: 21px; margin: 2px 0 12px; }
+.hcrumb { font-size: 12px; color: var(--muted); }
+.hbody { font-size: 14.5px; line-height: 1.6; }
+.hbody p { margin: 0 0 10px; }
+.hbody ul, .hbody ol { margin: 0 0 12px; padding-left: 22px; }
+.hbody li { margin: 3px 0; }
+.hbody kbd { font: 12.5px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--soft); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 2px 5px; white-space: nowrap; }
+.hbody a { color: var(--brand); }
+.hbody .htip { background: var(--soft); border-left: 3px solid var(--brand); border-radius: 0 8px 8px 0; padding: 9px 12px; margin: 4px 0 12px; }
+.htable { border-collapse: collapse; margin: 0 0 12px; font-size: 13.5px; }
+.htable th, .htable td { text-align: left; padding: 5px 14px 5px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.htable th { font-size: 12px; color: var(--muted); font-weight: 600; }
+.hprev { border: 1px dashed var(--line); border-radius: 8px; padding: 10px 12px; }
+.hback { display: none; margin-bottom: 10px; width: auto; max-width: max-content; }
+.btn.helpq { padding: 3px 6px; margin-left: 6px; vertical-align: middle; }
+.btn.helpq svg, [data-helpplek] svg { width: 15px; height: 15px; }
+[data-helpplek]:not(.helpq) { display: inline-flex; align-items: center; gap: 5px; }
+.ohead [data-helpplek]:not(.helpq) { margin-left: auto; }
+.ohead .right [data-helpplek] { margin-left: 0; }
+@media (max-width: 760px) {
+  .helpgrid { grid-template-columns: minmax(0, 1fr); }
+  .helpnav { position: static; max-height: none; }
+  .helpov.h-reading .helpnav { display: none; }
+  .helpov:not(.h-reading) .helpart { display: none; }
+  .hback { display: inline-flex; }
+  .helpart { padding: 14px 14px 18px; }
+  .helpov .ohead #h-q { flex-basis: 100%; order: 3; }
+}

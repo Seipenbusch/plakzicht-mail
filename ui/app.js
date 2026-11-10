@@ -34,6 +34,7 @@ const ICON = {
   chev: svg('<path d="m9 18 6-6-6-6"/>'),
   panel: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/>'),
   template: svg('<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>'),
+  help: svg('<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6"/><circle cx="12" cy="17" r=".6" fill="currentColor"/>'),
   clip: svg('<path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>'),
   msLogo: '<svg viewBox="0 0 21 21" aria-hidden="true" width="16" height="16"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>',
   download: svg('<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>'),
@@ -1574,7 +1575,7 @@ function renderCalMain() {
     <h1>${esc(calTitle())}</h1>${CAL.loading ? '<span class="spin"></span>' : ''}<span class="grow"></span>
     <div class="seg">${views.map(([k, n]) => `<button class="${view === k ? 'on' : ''}" data-view="${k}">${n}</button>`).join('')}</div>
     <button class="btn primary" id="cal-add" title="Nieuwe afspraak">${ICON.plus}<span>Afspraak</span></button>
-    <button class="btn" id="cal-back">${ICON.mail}<span> Naar mail</span></button></div>
+    ${helpBtn('agenda')}<button class="btn" id="cal-back">${ICON.mail}<span> Naar mail</span></button></div>
     ${CAL.errors.length ? `<div class="callout small">${CAL.errors.map(esc).join('<br>')}</div>` : ''}`;
   const evs = CAL.events, ords = CAL.orders;
   if (view === 'list') {
@@ -1746,7 +1747,7 @@ async function todayHtml() {
 // ------------------------------------------------------------ sneltoetsen
 document.addEventListener('keydown', e => {
   if (!S.st || $('#app').hidden || $('#dlg').open || $('.cmenu.root')) return;
-  if (!$('#overlay').hidden) return;
+  if (!$('#overlay').hidden || !$('#helpov').hidden) return;
   if (e.target.closest('input, textarea, select, [contenteditable=true]')) return;
   const ctrl = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
   if (ctrl && k === 'n' && !S.popout) { e.preventDefault(); return openCompose({ mode: 'new' }); }
@@ -2690,7 +2691,7 @@ function tplPicker(c, ed, root) {
     <div class="results" id="tplres">${sec('Mijn sjablonen', g.mine)}${sec(mbv ? mbv.address : 'Mailbox', g.box)}
       ${any ? '' : `<div class="empty">Nog geen sjablonen${mbv ? ' voor ' + esc(mbv.address) : ''}. Maak er een via <b>Sjablonen beheren</b> of sla deze tekst op als sjabloon.</div>`}</div>
     <p class="note">Ingevoegd op de plek van de cursor, boven je handtekening. Je ziet de mail altijd eerst; versturen doe je zelf.</p>
-    <div class="dlgbtns"><button type="button" class="btn" id="tpl-save">Deze tekst opslaan als sjabloon…</button><button type="button" class="btn" id="tpl-manage">Sjablonen beheren</button><button type="button" class="btn" data-cancel>Sluiten</button></div></form>`, (d, done) => {
+    <div class="dlgbtns">${helpBtn('sjabloon', true)}<button type="button" class="btn" id="tpl-save">Deze tekst opslaan als sjabloon…</button><button type="button" class="btn" id="tpl-manage">Sjablonen beheren</button><button type="button" class="btn" data-cancel>Sluiten</button></div></form>`, (d, done) => {
     const inp = $('[name=q]', d);
     const filter = () => { const q = (inp.value || '').toLowerCase().trim(); $$('.tplrow', d).forEach(b => { b.hidden = !!q && !b.dataset.q.includes(q); }); $$('h3.sub', d).forEach(h => { let n = h.nextElementSibling, vis = false; while (n && n.classList.contains('tplrow')) { vis = vis || !n.hidden; n = n.nextElementSibling; } h.hidden = !vis; }); };
     if (inp) { inp.oninput = filter; inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const b = $$('.tplrow', d).find(x => !x.hidden); if (b) b.click(); } }; if (!isTouchUI()) setTimeout(() => inp.focus(), 30); }
@@ -2878,7 +2879,7 @@ async function openRules(opt = {}) {
     const ov = $('#overlay');
     ov.innerHTML = `<div class="ohead"><button class="btn" data-close>← Terug naar mail</button><h1>Regels</h1>
       <span class="note">Regels lopen automatisch op nieuwe mail in Postvak IN, van boven naar beneden.</span>
-      <div class="right">${isMs() ? '' : `<button class="btn" id="r-sim">${ICON.bolt} Testmail laten binnenkomen</button>`}</div></div>
+      <div class="right">${helpBtn('regels')}${isMs() ? '' : `<button class="btn" id="r-sim">${ICON.bolt} Testmail laten binnenkomen</button>`}</div></div>
       ${isMs() ? '<div class="callout" style="margin-bottom:12px">In deze testversie werken regels alleen in de demo-stand. Je kunt ze hier al wel maken; automatisch uitvoeren op Microsoft-mailboxen komt in een volgende stap.</div>' : ''}
       <div class="grid2 rules"><div class="panel" id="r-list"></div><div class="panel" id="r-edit"></div></div>`;
     ov.hidden = false;
@@ -3225,7 +3226,7 @@ async function openAdmin(tab) {
     ADM = await api('admin_data');
     const tabs = [['users', 'Gebruikers'], ['mailboxes', 'Microsoft-mailboxen'], ['labels', 'Labels'], ['sigs', 'Handtekeningen'], ['tpls', 'Sjablonen'], ['detect', 'Herkenning en Plakzicht'], ['ms', 'Microsoft-koppeling'], ['claude', 'Claude'], ['server', 'Server en back-up']];
     const ov = $('#overlay');
-    ov.innerHTML = `<div class="ohead"><button class="btn" data-close>← Terug naar mail</button><h1>Beheer</h1></div>
+    ov.innerHTML = `<div class="ohead"><button class="btn" data-close>← Terug naar mail</button><h1>Beheer</h1>${helpBtn('adm:' + admTab)}</div>
       <div class="tabs">${tabs.map(([k, n]) => `<button class="pill ${admTab === k ? 'on' : ''}" data-tab="${k}">${n}</button>`).join('')}</div>
       <div id="admbody"></div>`;
     ov.hidden = false;
@@ -3393,7 +3394,7 @@ async function openMySettings(editId, section) {
   await run(async () => { await refreshState(); });
   const secs = [['view', 'Weergave'], ['notify', 'Meldingen'], ['qs', 'Snelle stappen'], ['claude', 'Claude'], ['sig', 'Handtekeningen'], ['tpl', 'Sjablonen'], ['pw', 'Wachtwoord'], ['dev', 'Apparaten'], ['mob', 'Mobiel']];
   const ov = $('#overlay');
-  ov.innerHTML = `<div class="ohead"><button class="btn" data-close>← Terug naar mail</button><h1>Mijn instellingen</h1><span class="note">${esc(S.st.user.name)} · ${esc(S.st.user.username)}</span></div>
+  ov.innerHTML = `<div class="ohead"><button class="btn" data-close>← Terug naar mail</button><h1>Mijn instellingen</h1><span class="note">${esc(S.st.user.name)} · ${esc(S.st.user.username)}</span>${helpBtn('my:' + mySec)}</div>
     <div class="tabs">${secs.map(([k, n]) => `<button class="pill ${mySec === k ? 'on' : ''}" data-sec="${k}">${n}</button>`).join('')}</div><div id="mybody"></div>`;
   ov.hidden = false;
   $('[data-close]', ov).onclick = () => { closeOverlay(); renderList(); renderRibbon(); };
@@ -3420,7 +3421,7 @@ function myView() {
       <p class="note">Ongelezen, totaal, beide of geen. Ook te kiezen met de rechtermuisknop op een map (telefoon: lang drukken).</p>
       ${S.st.mailboxes.map(mb => `<div class="cntmb"><b>${esc(mb.display)}</b>${mb.folders.map(f => `<label class="cntrow" style="--d:${f.depth || 0}">
         <span class="ell">${folderIcon(f)} ${esc(f.name)}</span><select data-cnt="${mb.id}|${esc(f.id)}">${Object.entries(CNT_NAMES).map(([k, n]) => `<option value="${k}" ${cntMode(mb.id, f) === k ? 'selected' : ''}>${n}${k !== 'none' ? ' · ' + esc(cntText(k, f, true)) : ''}</option>`).join('')}</select></label>`).join('')}</div>`).join('')}</div>
-      <div class="panel"><h2>Kolombreedtes <small>per scherm</small></h2>
+      <div class="panel"><h2>Kolombreedtes <small>per scherm</small>${helpBtn('kolommen', true)}</h2>
         <p class="note">De breedtes van de zijbalk, de maillijst, het Plakzicht-paneel en de kolommen in de lijst worden bewaard per scherm (dit scherm: <b>${esc(S.screen.replace('x', ' × '))}</b>). Is het venster smaller, dan past alles zich aan zonder dat je instelling verloren gaat. Op een nieuw scherm begin je met de breedtes van het scherm dat er het meest op lijkt.</p>
         <button class="btn" type="button" id="w-reset">Kolombreedtes op dit scherm herstellen</button></div>
       <div class="panel"><h2>Bewaard per gebruiker</h2><p class="note">Deze instellingen staan op de server bij jouw naam, dus je hebt ze op elke pc waar je inlogt. Ook je sortering en gekozen kolommen worden bewaard.</p></div></div></div>`;
@@ -3980,6 +3981,7 @@ $('#m-me').onclick = () => {
     { n: 'Regels', icon: ICON.rules, run: () => $('#nav-rules').click() },
     ...(S.st.user.role === 'beheerder' ? [{ n: 'Beheer', icon: ICON.shield, run: () => $('#btn-admin').click() }] : []),
     { n: 'Mijn instellingen', icon: ICON.pen, run: () => openMySettings() },
+    { n: 'Handleiding', icon: ICON.help, run: () => openHelp() },
     { n: on ? 'Meldingen uitzetten' : 'Meldingen aanzetten', icon: on ? ICON.bellOff : ICON.bell, run: () => toggleNotify() },
     '-', { n: 'Uitloggen', icon: ICON.ban, run: () => $('#btn-logout').click() }]);
 };
@@ -4173,3 +4175,214 @@ if ('serviceWorker' in navigator && window.isSecureContext && !window.pywebview 
     else boot(await api('state'));
   } catch { showLogin(); }
 })();
+
+// ------------------------------------------------------------ handleiding
+// Teksten in ui/help/*.md (via de API: beheer.md alleen voor beheerders) + 'Afspraken' die beheerders zelf schrijven.
+// Zoeken: in titel, trefwoorden en tekst, met voorvoegsels ("sjab") en kleine tikfouten ("sjabloom").
+const HELP = { data: null, arts: [], cur: null, q: '' };
+const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+function parseHelp(text, src) {
+  const out = []; let cat = '', a = null;
+  for (const line of String(text).replace(/<!--[\s\S]*?-->/g, '').split('\n')) {
+    let m;
+    if ((m = line.match(/^# (.+)/))) { cat = m[1].trim(); continue; }
+    if ((m = line.match(/^## (.+?)\s*\{#([\w-]+)\}\s*$/))) { a = { id: m[2], title: m[1].trim(), cat, keys: '', plek: [], body: '', src }; out.push(a); continue; }
+    if (!a) continue;
+    if (!a.body.trim() && (m = line.match(/^trefwoorden:\s*(.*)/))) { a.keys = m[1]; continue; }
+    if (!a.body.trim() && (m = line.match(/^plek:\s*(.*)/))) { a.plek = m[1].split(',').map(x => x.trim()).filter(Boolean); continue; }
+    a.body += line + '\n';
+  }
+  return out;
+}
+// Kleine, veilige opmaak: alles wordt eerst ge-escaped; daarna alleen vet, schuin, `toets`, links en lijstjes
+function mdInline(t) {
+  return esc(t).replace(/`([^`]+)`/g, '<kbd>$1</kbd>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\*([^*]+)\*/g, '<i>$1</i>')
+    .replace(/\[([^\]]+)\]\(#([\w-]+)\)/g, '<a href="#" data-help="$2">$1</a>')
+    .replace(/\[([^\]]+)\]\((https:\/\/[^)\s"]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
+function mdHtml(body) {
+  const lines = String(body || '').split('\n'), out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (!l.trim()) { i++; continue; }
+    if (/^\|/.test(l)) {
+      const rows = []; while (i < lines.length && /^\|/.test(lines[i])) rows.push(lines[i++]);
+      const cells = r => r.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      const body = rows.filter(r => !/^\|[\s|:-]+\|$/.test(r));
+      out.push(`<table class="htable"><thead><tr>${cells(body[0]).map(c => `<th>${mdInline(c)}</th>`).join('')}</tr></thead><tbody>${body.slice(1).map(r => `<tr>${cells(r).map(c => `<td>${mdInline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`);
+      continue;
+    }
+    if (/^\s*([-*]|\d+\.) /.test(l)) {
+      const ol = /^\s*\d+\. /.test(l), items = [];
+      while (i < lines.length && /^\s*([-*]|\d+\.) /.test(lines[i])) {
+        const sub = /^\s{2,}/.test(lines[i]), txt = lines[i].replace(/^\s*([-*]|\d+\.) /, '');
+        if (sub && items.length) items[items.length - 1].sub.push(txt); else items.push({ txt, sub: [] });
+        i++;
+      }
+      out.push(`<${ol ? 'ol' : 'ul'}>${items.map(it => `<li>${mdInline(it.txt)}${it.sub.length ? `<ul>${it.sub.map(x => `<li>${mdInline(x)}</li>`).join('')}</ul>` : ''}</li>`).join('')}</${ol ? 'ol' : 'ul'}>`);
+      continue;
+    }
+    if (/^> /.test(l)) { const q = []; while (i < lines.length && /^> /.test(lines[i])) q.push(lines[i++].slice(2)); out.push(`<div class="htip">${mdInline(q.join(' '))}</div>`); continue; }
+    const p = []; while (i < lines.length && lines[i].trim() && !/^(\||\s*([-*]|\d+\.) |> )/.test(lines[i])) p.push(lines[i++]);
+    out.push(`<p>${mdInline(p.join(' '))}</p>`);
+  }
+  return out.join('');
+}
+function lev(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]; let best = i;
+    for (let j = 1; j <= b.length; j++) { cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); best = Math.min(best, cur[j]); }
+    if (best > max) return max + 1; prev = cur;
+  }
+  return prev[b.length];
+}
+const STOP = new Set(['de', 'het', 'een', 'en', 'of', 'ik', 'je', 'hoe', 'wat', 'waar', 'kan', 'ik', 'in', 'op', 'van', 'naar', 'met', 'voor', 'om', 'te', 'is', 'mijn', 'werkt', 'doe', 'maak', 'wil']);
+function helpSearch(q) {
+  const toks = norm(q).split(/[^a-z0-9@]+/).filter(t => t && !STOP.has(t));
+  if (!toks.length) return [];
+  const res = [];
+  for (const a of HELP.arts) {
+    if (!a._ix) {
+      const words = s => norm(s).split(/[^a-z0-9@]+/).filter(Boolean);
+      a._ix = { title: words(a.title), keys: words(a.keys), body: words(a.body) };
+    }
+    let score = 0, hits = 0;
+    for (const t of toks) {
+      let best = 0;
+      const look = (ws, w) => { for (const x of ws) { if (x === t) return w; } for (const x of ws) { if (t.length >= 3 && x.startsWith(t)) return w * .8; } return 0; };
+      best = Math.max(look(a._ix.title, 10), look(a._ix.keys, 7), look(a._ix.body, 2));
+      if (!best && t.length >= 4) {  // tikfout: 1 letter anders (vanaf 4 letters), 2 bij lange woorden
+        const max = t.length >= 8 ? 2 : 1;
+        for (const [ws, w] of [[a._ix.title, 6], [a._ix.keys, 5], [a._ix.body, 1]]) if (ws.some(x => x.length >= 4 && lev(t, x, max) <= max)) { best = Math.max(best, w); }
+      }
+      if (best) { hits++; score += best; }
+    }
+    if (hits) res.push({ a, score: score + (hits === toks.length ? 50 : 0), all: hits === toks.length });
+  }
+  const all = res.filter(r => r.all);
+  return (all.length ? all : res).sort((x, y) => y.score - x.score).slice(0, 25).map(r => r.a);
+}
+function helpSnippet(a, q) {
+  const toks = norm(q).split(/[^a-z0-9@]+/).filter(t => t.length > 2 && !STOP.has(t));
+  const plain = a.body.replace(/(^|\n)\s*([-*]|\d+\.)\s+/g, ' ').replace(/[`*>|#]/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/\s+/g, ' ').trim();
+  const n = norm(plain);
+  let at = -1; for (const t of toks) { at = n.indexOf(t); if (at >= 0) break; }
+  const s = Math.max(0, at - 50), cut = plain.slice(s, s + 150);
+  return (s ? '…' : '') + cut + (s + 150 < plain.length ? '…' : '');
+}
+async function loadHelp(force) {
+  if (HELP.data && !force) return;
+  HELP.data = await api('help');
+  const af = (HELP.data.afspraken || []).map(x => ({ id: x.id, title: x.title, cat: 'Afspraken', keys: x.keywords || '', plek: [], body: x.body, src: 'afspraak', by: x.by, updated: x.updated }));
+  HELP.arts = [...af, ...parseHelp(HELP.data.text, 'help'), ...(HELP.data.admin ? parseHelp(HELP.data.admin, 'beheer') : [])];
+}
+function helpFor(plek) { return HELP.arts.find(a => a.plek.includes(plek)); }
+function helpBtn(plek, small) { return `<button type="button" class="btn ${small ? 'small helpq' : ''}" data-helpplek="${esc(plek)}" title="Uitleg in de handleiding">${ICON.help}${small ? '' : '<span> Uitleg</span>'}</button>`; }
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-helpplek]'); if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  const p = b.dataset.helpplek === 'my:' + 'undefined' ? 'my:view' : b.dataset.helpplek;
+  if ($('#dlg').open) $('#dlg').close();
+  openHelp({ plek: p });
+}, true);
+async function openHelp(o = {}) {
+  await run(() => loadHelp());
+  const ov = $('#helpov');
+  ov.classList.remove('h-reading');
+  const back = !$('#overlay').hidden ? '← Terug' : '← Terug naar mail';
+  ov.innerHTML = `<div class="ohead"><button class="btn" data-close>${back}</button><h1>Handleiding</h1>
+      <input id="h-q" type="search" placeholder="Waar zoek je uitleg over? Bijvoorbeeld: sjabloon, map maken, vegen" autocomplete="off" value="${esc(HELP.q)}"></div>
+    <div class="helpgrid"><nav class="panel helpnav" id="h-nav"></nav><article class="panel helpart" id="h-art"></article></div>`;
+  ov.hidden = false;
+  $('[data-close]', ov).onclick = closeHelp;
+  const q = $('#h-q');
+  let qt;
+  q.oninput = () => { clearTimeout(qt); qt = setTimeout(() => { HELP.q = q.value; renderHelpNav(); if (HELP.q.trim()) { const r = helpSearch(HELP.q); if (!isMob()) showHelpArt(r[0] ? r[0].id : null, true); else ov.classList.remove('h-reading'); } }, 120); };
+  q.onkeydown = e => { if (e.key === 'Enter') { const r = helpSearch(q.value); if (r[0]) showHelpArt(r[0].id); } };
+  const start = o.id || (o.plek && (helpFor(o.plek) || {}).id) || (HELP.q.trim() ? null : 'over');
+  renderHelpNav();
+  showHelpArt(start || (helpSearch(HELP.q)[0] || {}).id || 'over', !o.id && !o.plek && !!HELP.q.trim());
+  if (!o.id && !o.plek && !isTouchUI()) setTimeout(() => q.focus(), 30);
+}
+function renderHelpNav() {
+  const nav = $('#h-nav'); if (!nav) return;
+  const q = HELP.q.trim(), canEdit = HELP.data.can_edit;
+  if (q) {
+    const r = helpSearch(q);
+    nav.innerHTML = `<div class="hhead">${r.length ? `${r.length} ${r.length === 1 ? 'artikel' : 'artikelen'} over “${esc(q)}”` : `Niets gevonden over “${esc(q)}”`}</div>
+      ${r.map(a => `<button class="hres ${HELP.cur === a.id ? 'on' : ''}" data-art="${esc(a.id)}"><b>${esc(a.title)}</b><span class="note">${esc(a.cat)} · ${esc(helpSnippet(a, q))}</span></button>`).join('')}
+      ${r.length ? '' : '<p class="note">Probeer een ander woord, bijvoorbeeld wat je op het scherm ziet staan. Of vraag het een collega of de beheerder.</p>'}`;
+  } else {
+    const cats = [...new Set(HELP.arts.map(a => a.cat))];
+    if (!cats.includes('Afspraken')) cats.unshift('Afspraken');
+    nav.innerHTML = cats.map(c => {
+      const list = HELP.arts.filter(a => a.cat === c);
+      if (c === 'Afspraken' && !list.length && !canEdit) return '';
+      return `<div class="hcat">${esc(c)}${c === 'Afspraken' ? ' <span class="note">van ons bedrijf</span>' : ''}</div>${list.map(a => `<button class="hlink ${HELP.cur === a.id ? 'on' : ''}" data-art="${esc(a.id)}">${esc(a.title)}</button>`).join('')}
+        ${c === 'Afspraken' && canEdit ? `<button class="hlink add" id="h-new">+ Nieuwe afspraak</button>` : ''}${c === 'Afspraken' && !list.length ? '<p class="note" style="margin:2px 8px 6px">Nog geen afspraken.</p>' : ''}`;
+    }).join('');
+  }
+  $$('[data-art]', nav).forEach(b => b.onclick = () => showHelpArt(b.dataset.art));
+  if ($('#h-new', nav)) $('#h-new', nav).onclick = () => editAfspraak(null);
+}
+function showHelpArt(id, keepNav) {
+  const box = $('#h-art'); if (!box) return;
+  const a = HELP.arts.find(x => x.id === id);
+  HELP.cur = a ? a.id : null;
+  if (!a) { box.innerHTML = '<p class="note">Kies links een onderwerp.</p>'; renderHelpNav(); return; }
+  const canEdit = a.src === 'afspraak' && HELP.data.can_edit;
+  box.innerHTML = `<button class="btn small hback" id="h-back">← ${HELP.q.trim() ? 'Zoekresultaten' : 'Onderwerpen'}</button>
+    <div class="hcrumb">${esc(a.cat)}${a.src === 'beheer' ? ' · <span class="badge">alleen beheerders</span>' : ''}</div><h2>${esc(a.title)}</h2>
+    <div class="hbody">${mdHtml(a.body)}</div>
+    ${a.src === 'afspraak' ? `<p class="note">Afspraak van ons bedrijf${a.by ? ` · laatst gewijzigd door ${esc(a.by)}` : ''}${a.updated ? ' · ' + esc(fmtDate(new Date(a.updated * 1000).toISOString(), true)) : ''}</p>` : ''}
+    ${canEdit ? `<div class="row"><button class="btn" id="h-edit">Wijzigen</button><button class="btn danger" id="h-del">Verwijderen</button></div>` : ''}`;
+  $('#helpov').classList.add('h-reading');
+  $('#h-back').onclick = () => $('#helpov').classList.remove('h-reading');
+  $$('[data-help]', box).forEach(l => l.onclick = e => { e.preventDefault(); showHelpArt(l.dataset.help); });
+  if (canEdit) {
+    $('#h-edit').onclick = () => editAfspraak(a);
+    $('#h-del').onclick = async () => {
+      const ok = await dialog(`<form><h2>Afspraak “${esc(a.title)}” verwijderen?</h2><p class="muted">Hij verdwijnt voor iedereen uit de handleiding.</p><div class="dlgbtns"><button type="button" class="btn" data-cancel>Annuleren</button><button class="btn primary">Verwijderen</button></div></form>`);
+      if (ok) run(async () => { await api('help_delete_afspraak', a.id); await loadHelp(true); toast('Afspraak verwijderd'); renderHelpNav(); showHelpArt('over'); });
+    };
+  }
+  box.scrollTop = 0; if (isMob()) $('#helpov').scrollTop = 0;
+  if (!keepNav) renderHelpNav(); else $$('#h-nav [data-art]').forEach(b => b.classList.toggle('on', b.dataset.art === HELP.cur));
+}
+function editAfspraak(a) {
+  const box = $('#h-art');
+  $('#helpov').classList.add('h-reading');
+  box.innerHTML = `<form class="form" id="h-form"><h2>${a ? 'Afspraak wijzigen' : 'Nieuwe afspraak'}</h2>
+    <label>Titel<input name="title" maxlength="150" required value="${esc(a ? a.title : '')}" placeholder="Bijvoorbeeld: Wie pakt info@ op?"></label>
+    <label>Trefwoorden <span class="note">(waarop collega's het moeten kunnen vinden)</span><input name="keywords" maxlength="300" value="${esc(a ? a.keys : '')}" placeholder="bijvoorbeeld: rooster, verdeling, info, wie"></label>
+    <label>Tekst<textarea name="body" rows="14" required placeholder="Gewone tekst. Een regel die begint met - wordt een lijstje, met 1. een genummerde lijst, met > een tip. **vet** en *schuin* kan ook.">${esc(a ? a.body.trim() : '')}</textarea></label>
+    <div class="note">Voorbeeld van hoe het eruitziet:</div><div class="hbody hprev" id="h-prev"></div>
+    <div class="row"><button class="btn primary">Opslaan</button><button type="button" class="btn" id="h-cancel">Annuleren</button></div></form>`;
+  const f = $('#h-form'), prev = () => { $('#h-prev').innerHTML = mdHtml(f.body.value) || '<p class="note">Nog leeg</p>'; };
+  f.body.oninput = prev; prev();
+  $('#h-cancel').onclick = () => a ? showHelpArt(a.id) : showHelpArt('afspraken-beheren');
+  f.onsubmit = e => {
+    e.preventDefault();
+    run(async () => {
+      const id = await api('help_save_afspraak', { id: a && a.id, title: f.title.value, keywords: f.keywords.value, body: f.body.value });
+      await loadHelp(true); toast('Afspraak opgeslagen'); HELP.q = ''; $('#h-q').value = ''; showHelpArt(id);
+    });
+  };
+}
+$('#btn-help').innerHTML = ICON.help;
+$('#btn-help').onclick = () => openHelp();
+document.addEventListener('keydown', e => {
+  if (e.key !== 'F1' || !S.st || $('#app').hidden) return;
+  e.preventDefault();
+  if ($('#dlg').open) $('#dlg').close();
+  if (!$('#helpov').hidden) return closeHelp();
+  const plek = !$('#overlay').hidden ? ($('#overlay [data-helpplek]') || {}).dataset?.helpplek : null;
+  openHelp(plek ? { plek } : {});
+});
+function closeHelp() { const h = $('#helpov'); h.hidden = true; h.innerHTML = ''; h.classList.remove('h-reading'); }
+document.addEventListener('keydown', e => {  // Esc sluit eerst de handleiding (daarna pas het scherm eronder)
+  if (e.key === 'Escape' && !$('#helpov').hidden && !$('#dlg').open && !$('.cmenu.root')) { e.preventDefault(); e.stopImmediatePropagation(); closeHelp(); }
+}, true);
