@@ -32,6 +32,8 @@ op Unraid; werkplekken via de Windows-app (`werkplek/`) of de browser. Eigenaar:
 ## Testen
 - `python tests/run_all.py` (± 1 min); één test: `python tests/run_all.py test_werkplek`.
 - Nieuwe functionaliteit krijgt een test in `tests/suite/` en een plek in `TESTS` in `tests/run_all.py`.
+- Nieuwe of gewijzigde functie: ook de handleiding bijwerken (`ui/help/handleiding.md`, beheer in `ui/help/beheer.md`; opbouw staat bovenin
+  het bestand). Nieuwe pagina in Mijn instellingen of Beheer heeft een artikel met `plek: my:<id>` / `adm:<id>` nodig (`test_handleiding`).
 - Elke pull request draait de tests en een proefbouw van de Docker-image (`.github/workflows/tests.yml`).
 
 ## Uitrol

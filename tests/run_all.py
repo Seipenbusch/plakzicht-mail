@@ -23,6 +23,7 @@ TESTS = [
     "test_favorieten_links",
     "test_kolombreedtes",
     "test_sjablonen",
+    "test_handleiding",
 ]
 
 

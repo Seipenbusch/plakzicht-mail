@@ -23,6 +23,7 @@ python tests/run_all.py                  # alle tests (± 1 min); één test: py
 - `app.py` – server, API, schema en migraties (`init_db`), sessies en *ingelogd blijven*, back-ups.
 - `graph.py` – Microsoft Graph · `mscache.py` – lokale kopie en synchronisatie · `plakzicht.py` – Plakzicht-API (alleen lezen).
 - `ui/` – scherm (`index.html`, `app.js`, `style.css`), app-profiel (`manifest.webmanifest`, `sw.js`, `icons/`).
+- `ui/help/` – de handleiding in de app (`handleiding.md` voor iedereen, `beheer.md` alleen voor beheerders; alleen via de API na inloggen).
 - `werkplek/werkplek.py` – de Windows-app (venster, kiest zelf lokaal of internet).
 - `installer/` – Inno Setup-script, dienst en icoon · `deploy/unraid/` – compose en `.env`-voorbeeld.
 - Tests in `tests/suite/`, met nagebootste Microsoft Graph (`tests/fakegraph.py`) en Claude (`tests/fakeclaude.py`).

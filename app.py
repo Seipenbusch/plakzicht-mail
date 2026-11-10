@@ -34,6 +34,7 @@ from plakzicht import PlakzichtApi, PlakzichtError
 FROZEN = getattr(sys, "frozen", False)  # geïnstalleerde Windows-versie (setup.exe)
 BASE = getattr(sys, "_MEIPASS", None) or os.path.dirname(os.path.abspath(__file__))
 UI = os.path.join(BASE, "ui")
+HELP_DIR = os.path.join(UI, "help")  # handleiding: alleen via de API (beheer.md alleen voor beheerders)
 IN_DOCKER = os.environ.get("PLAKZICHT_DOCKER") == "1"
 
 
@@ -750,6 +751,15 @@ def _demo_folders(c, mailbox_id):
         walk(k, 1)
     walk(None, 0)
     return out
+
+
+def _get_setting(c, key, default=None):
+    r = c.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return r[0] if r else default
+
+
+def _set_setting(c, key, value):
+    c.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
 
 
 def _settings(c):
@@ -2677,6 +2687,52 @@ class Api:
             raise ValueError(f"De bijlagen zijn samen te groot (hooguit 2,5 MB per mail).")
         return out
 
+    # -- handleiding: vaste tekst (ui/help) + 'Afspraken' die beheerders zelf schrijven (in settings)
+    def help(self):
+        with _conn() as c:
+            u = self._user(c)
+            afspraken = json.loads(_get_setting(c, "help_afspraken", "[]") or "[]")
+
+        def read(name):
+            with open(os.path.join(HELP_DIR, name), encoding="utf-8") as f:
+                return f.read()
+        admin = u["role"] == "beheerder"
+        return {"text": read("handleiding.md"), "admin": read("beheer.md") if admin else None,
+                "afspraken": afspraken, "can_edit": admin}
+
+    def help_save_afspraak(self, data):
+        data = data if isinstance(data, dict) else {}
+        title = (data.get("title") or "").strip()[:150]
+        body = (data.get("body") or "").strip()
+        if not title or not body:
+            raise ValueError("Geef de afspraak een titel en een tekst.")
+        if len(body) > 20000:
+            raise ValueError("De tekst is te lang (hooguit 20.000 tekens).")
+        with _lock, _conn() as c:
+            u = self._user(c)
+            if u["role"] != "beheerder":
+                raise PermissionError("Alleen een beheerder kan afspraken maken of wijzigen.")
+            items = json.loads(_get_setting(c, "help_afspraken", "[]") or "[]")
+            aid = str(data.get("id") or "")
+            item = next((x for x in items if x["id"] == aid), None)
+            if not item:
+                aid = "a" + secrets.token_hex(4)
+                item = {"id": aid}
+                items.append(item)
+            item.update(title=title, body=body, keywords=(data.get("keywords") or "").strip()[:300],
+                        updated=time.time(), by=u["name"])
+            _set_setting(c, "help_afspraken", json.dumps(items))
+        return aid
+
+    def help_delete_afspraak(self, aid):
+        with _lock, _conn() as c:
+            u = self._user(c)
+            if u["role"] != "beheerder":
+                raise PermissionError("Alleen een beheerder kan afspraken verwijderen.")
+            items = [x for x in json.loads(_get_setting(c, "help_afspraken", "[]") or "[]") if x["id"] != str(aid)]
+            _set_setting(c, "help_afspraken", json.dumps(items))
+        return True
+
     def change_password(self, old, new):
         if len(new or "") < 8:
             raise ValueError("Kies een wachtwoord van minstens 8 tekens.")
@@ -3956,6 +4012,9 @@ def make_handler():
                 self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data); return
             if self.path.startswith("/download/eml"):
                 return self._download()
+            here = os.path.normcase(os.path.realpath(self.translate_path(self.path)))
+            if here == os.path.normcase(os.path.realpath(HELP_DIR)) or here.startswith(os.path.normcase(os.path.realpath(HELP_DIR)) + os.sep):
+                self.send_error(404); return  # handleiding alleen via de API (na inloggen)
             if self.path.startswith("/events"):
                 return self._events()
             return super().do_GET()
